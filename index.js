@@ -1,11 +1,11 @@
-// ========== ID Finder Bot v6.0 - Secure Admin & User Tracking ==========
+// ========== ID Finder Bot v7.0 - Final Debugged ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517"; // آیدی کانال یادبگیریم
-const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj"; 
+const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
 const PUBLIC_LINK = "https://ble.ir/yadbegirim";
 
-// 👑 لیست آیدی‌های ادمین (آیدی عددی خودتان را اینجا وارد کنید)
-const ADMIN_IDS = ["1381797564"]; 
+// 👑 لیست آیدی‌های ادمین
+const ADMIN_IDS = ["1381797564"];
 
 const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 
@@ -29,7 +29,7 @@ export default {
       const update = await request.json();
       const token = env.BALE_BOT_TOKEN;
 
-      // --- مدیریت Callback Query ---
+      // --- مدیریت Callback Query (دکمه‌های شیشه‌ای) ---
       if (update.callback_query) {
         const cb = update.callback_query;
         const chatId = cb.message.chat.id;
@@ -38,107 +38,119 @@ export default {
 
         await baleApi(token, 'answerCallbackQuery', { callback_query_id: cb.id });
 
-        // بررسی عضویت برای دکمه‌های اینلاین
         const isMember = await checkStrictMembership(token, userId);
 
         if (data === 'check_membership_inline') {
           if (isMember) {
-            await editMessage(token, chatId, cb.message.message_id, 
-              `✅ *عضویت تایید شد!*\n\n🆔 *شناسه شما:* \`${userId}\`\n\n${GUIDE_MESSAGE}`, 
+            await editMessage(token, chatId, cb.message.message_id,
+              `✅ *عضویت تایید شد!*\n\n🆔 *شناسه شما:* \`${userId}\`\n\n${GUIDE_MESSAGE}`,
               getServicesInlineKeyboard()
             );
           } else {
-            await baleApi(token, 'answerCallbackQuery', { callback_query_id: cb.id, text: '❌ هنوز عضو نشده‌اید!', show_alert: true });
+            await baleApi(token, 'answerCallbackQuery', {
+              callback_query_id: cb.id, text: '❌ هنوز عضو نشده‌اید!', show_alert: true
+            });
           }
         } else if (data === 'get_my_id_inline') {
-           if (isMember) {
-             await editMessage(token, chatId, cb.message.message_id, 
-               `🆔 *شناسه شما:* \`${userId}\`\n\n${GUIDE_MESSAGE}`, 
-               getServicesInlineKeyboard()
-             );
-           } else {
-             await baleApi(token, 'answerCallbackQuery', { callback_query_id: cb.id, text: 'لطفاً ابتدا عضو شوید.', show_alert: true });
-           }
+          if (isMember) {
+            await editMessage(token, chatId, cb.message.message_id,
+              `🆔 *شناسه شما:* \`${userId}\`\n\n${GUIDE_MESSAGE}`,
+              getServicesInlineKeyboard()
+            );
+          } else {
+            await baleApi(token, 'answerCallbackQuery', {
+              callback_query_id: cb.id, text: 'لطفاً ابتدا عضو شوید.', show_alert: true
+            });
+          }
         }
         return new Response('OK');
       }
 
       // --- مدیریت پیام‌ها ---
-      const msg = update.channel_post || update.message; 
+      const msg = update.channel_post || update.message;
       if (!msg) return new Response('OK');
 
       const chatId = msg.chat.id;
       const userId = msg.from ? msg.from.id : null;
 
-      // ۱. تشخیص پیام در کانال (بدون نیاز به چک عضویت شخصی)
+      // ۱) پیام در کانال (عمومی یا خصوصی)
       if (msg.chat.type === 'channel') {
         const id = msg.chat.id;
         const title = msg.chat.title || 'Unknown';
         const username = msg.chat.username ? '@' + msg.chat.username : '(خصوصی)';
         const replyText = `🆔 *شناسه این کانال:*\n\n🔢 عددی: \`${id}\`\n📛 نام: ${title}\n🔗 آیدی: ${username}`;
         await baleApi(token, 'sendMessage', { chat_id: chatId, text: replyText, parse_mode: 'Markdown' });
+        console.log(`📢 Channel Detected: ID=${id}`);
         return new Response('OK');
       }
 
-      // ۲. چت خصوصی
+      // ۲) چت خصوصی
       if (msg.chat.type === 'private' && userId) {
-        
-        // --- دستورات ادمین (فقط برای ADMIN_IDS) ---
+
+        // ✅ ثبت کاربر با «هر پیام» (فقط کاربران عادی، یک‌بار و یکتا)
+        if (!ADMIN_IDS.includes(userId.toString())) {
+          await trackUser(env, userId);
+        }
+
+        // --- دستورات ادمین ---
         if (ADMIN_IDS.includes(userId.toString())) {
           if (msg.text === '/stats') {
             const stats = await env.ID_FINDER_DB.get('stats', 'json') || { total: 0 };
-            await baleApi(token, 'sendMessage', { chat_id: chatId, text: `📊 *آمار ربات:*\n\n👥 تعداد کل کاربران ثبت شده: ${stats.total}` , parse_mode: 'Markdown'});
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: `📊 *آمار ربات:*\n\n👥 تعداد کل کاربران ثبت شده: ${stats.total}`,
+              parse_mode: 'Markdown'
+            });
             return new Response('OK');
           }
-          if (msg.text === '/users') {
+          if (msg.text === '/users' || msg.text === '/user') {
             const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
             const list = users.slice(-10).reverse().join('\n');
-            await baleApi(token, 'sendMessage', { chat_id: chatId, text: `👥 *۰ کاربر اخیر:*\n\n${list || 'هنوز کاربری نیست.'}` , parse_mode: 'Markdown'});
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: `👥 *۱۰ کاربر اخیر:*\n\n${list || 'هنوز کاربری نیست.'}`,
+              parse_mode: 'Markdown'
+            });
             return new Response('OK');
           }
         }
 
-        // --- منطق عمومی ---
-        
-        // الف) /start (ثبت کاربر + نمایش راهنما)
+        // الف) /start
         if (msg.text === '/start') {
-           // ذخیره کاربر در KV
-           await trackUser(env, userId);
-           
-           await baleApi(token, 'sendMessage', {
-             chat_id: chatId,
-             text: GUIDE_MESSAGE,
-             reply_markup: getReplyKeyboard()
-           });
-           return new Response('OK');
+          await baleApi(token, 'sendMessage', {
+            chat_id: chatId,
+            text: GUIDE_MESSAGE,
+            reply_markup: getReplyKeyboard()
+          });
+          return new Response('OK');
         }
 
-        // ب) دکمه "🚀 شروع" (چک عضویت سخت‌گیرانه)
+        // ب) دکمه «🚀 شروع»
         if (msg.text === "🚀 شروع") {
           const isMember = await checkStrictMembership(token, userId);
-          
+
           if (isMember) {
-             await baleApi(token, 'sendMessage', {
-               chat_id: chatId,
-               text: `✅ خوش آمدید!\n\n🆔 *شناسه شما:* \`${userId}\``,
-               parse_mode: 'Markdown',
-               reply_markup: getServicesInlineKeyboard()
-             });
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: `✅ خوش آمدید!\n\n🆔 *شناسه شما:* \`${userId}\``,
+              parse_mode: 'Markdown',
+              reply_markup: getServicesInlineKeyboard()
+            });
           } else {
-             await baleApi(token, 'sendMessage', {
-               chat_id: chatId,
-               text: `⚠️ *دسترسی محدود*\n\nشما عضو کانال نیستید یا خارج شده‌اید.\nبرای استفاده، ابتدا عضو شوید:\n📢 @yadbegirim`,
-               parse_mode: 'Markdown',
-               reply_markup: getJoinInlineKeyboard()
-             });
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: `⚠️ *دسترسی محدود*\n\nشما عضو کانال نیستید یا خارج شده‌اید.\nبرای استفاده، ابتدا عضو شوید:\n📢 @yadbegirim`,
+              parse_mode: 'Markdown',
+              reply_markup: getJoinInlineKeyboard()
+            });
           }
           return new Response('OK');
         }
-        
-        // ج) پیام فوروارد شده (چک عضویت سخت‌گیرانه)
+
+        // ج) پیام فوروارد شده
         if (msg.forward_from || msg.forward_from_chat) {
           const isMember = await checkStrictMembership(token, userId);
-          
+
           if (!isMember) {
             await baleApi(token, 'sendMessage', {
               chat_id: chatId,
@@ -164,12 +176,16 @@ export default {
           return new Response('OK');
         }
       }
-      
-      // ۳. گروه‌ها
+
+      // ۳) گروه‌ها
       if (msg.chat.type === 'supergroup' || msg.chat.type === 'group') {
-         const id = msg.chat.id;
-         const title = msg.chat.title || 'Unknown';
-         await baleApi(token, 'sendMessage', { chat_id: chatId, text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}`, parse_mode: 'Markdown' });
+        const id = msg.chat.id;
+        const title = msg.chat.title || 'Unknown';
+        await baleApi(token, 'sendMessage', {
+          chat_id: chatId,
+          text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}`,
+          parse_mode: 'Markdown'
+        });
       }
 
     } catch (e) {
@@ -184,55 +200,74 @@ export default {
 async function baleApi(token, method, data) {
   const url = `https://tapi.bale.ai/bot${token}/${method}`;
   try {
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
     return await res.json();
-  } catch (e) { return null; }
+  } catch (e) {
+    console.error(`API Error in ${method}:`, e);
+    return null;
+  }
 }
 
-// بررسی سخت‌گیرانه عضویت (بدون not_found)
+// بررسی سخت‌گیرانه عضویت در کانال
 async function checkStrictMembership(token, userId) {
-  const res = await baleApi(token, 'getChatMember', { chat_id: REQUIRED_CHANNEL_ID, user_id: userId });
+  const res = await baleApi(token, 'getChatMember', {
+    chat_id: REQUIRED_CHANNEL_ID,
+    user_id: userId
+  });
   if (res && res.ok) {
     const status = res.result.status;
-    // فقط member, admin, creator مجاز هستند. left و kicked و not_found غیرمجاز.
     return ['member', 'administrator', 'creator'].includes(status);
   }
-  return false; // اگر API خطا داد، دسترسی نده (امنیت بالاتر)
+  return false;
 }
 
-// ذخیره سازی کاربر در KV
+// ثبت کاربر یکتا در KV (با هر پیام، فقط یک‌بار شمارش)
 async function trackUser(env, userId) {
   try {
-    // آپدیت آمار
-    const stats = await env.ID_FINDER_DB.get('stats', 'json') || { total: 0 };
-    stats.total++;
-    await env.ID_FINDER_DB.put('stats', JSON.stringify(stats));
-
-    // آپدیت لیست اخیر
     const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
     if (!users.includes(userId.toString())) {
       users.push(userId.toString());
-      if (users.length > 50) users.shift(); // فقط ۵۰ نفر آخر
+      if (users.length > 50) users.shift();
       await env.ID_FINDER_DB.put('recent_users', JSON.stringify(users));
+
+      const stats = await env.ID_FINDER_DB.get('stats', 'json') || { total: 0 };
+      stats.total++;
+      await env.ID_FINDER_DB.put('stats', JSON.stringify(stats));
+
+      console.log(`📥 New user tracked: ${userId} | Total: ${stats.total}`);
     }
   } catch (e) {
     console.error('KV Error:', e);
   }
 }
 
+// کیبورد دائمی (فقط شروع)
 function getReplyKeyboard() {
-  return { keyboard: [[{ text: "🚀 شروع" }]], resize_keyboard: true, is_persistent: true };
+  return {
+    keyboard: [[{ text: "🚀 شروع" }]],
+    resize_keyboard: true,
+    is_persistent: true
+  };
 }
 
+// کیبورد شیشه‌ای خدمات
 function getServicesInlineKeyboard() {
   return {
     inline_keyboard: [
-      [{ text: "🆔 آیدی من", callback_data: "get_my_id_inline" }, { text: "🔄 بررسی عضویت", callback_data: "check_membership_inline" }],
+      [
+        { text: "🆔 آیدی من", callback_data: "get_my_id_inline" },
+        { text: "🔄 بررسی عضویت", callback_data: "check_membership_inline" }
+      ],
       [{ text: "📢 کانال یادبگیریم", url: PUBLIC_LINK }]
     ]
   };
 }
 
+// کیبورد شیشه‌ای عضویت
 function getJoinInlineKeyboard() {
   return {
     inline_keyboard: [
@@ -243,5 +278,11 @@ function getJoinInlineKeyboard() {
 }
 
 async function editMessage(token, chatId, messageId, text, replyMarkup) {
-  await baleApi(token, 'editMessageText', { chat_id: chatId, message_id: messageId, text: text, parse_mode: 'Markdown', reply_markup: replyMarkup });
+  await baleApi(token, 'editMessageText', {
+    chat_id: chatId,
+    message_id: messageId,
+    text: text,
+    parse_mode: 'Markdown',
+    reply_markup: replyMarkup
+  });
 }
