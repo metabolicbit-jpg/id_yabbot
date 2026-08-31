@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v6.0 - Secure Admin & User Tracking ==========
+// ========= ID Finder Bot v6.0 - Secure Admin & User Tracking ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517"; // آیدی کانال یادبگیریم
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj"; 
