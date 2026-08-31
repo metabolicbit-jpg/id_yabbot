@@ -1,0 +1,6 @@
+name = "idyab"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+[vars]
+BALE_BOT_TOKEN = "996317935:SwTw2fk_ZUtmDyNgZdUxEBIOiBoLHA5ubNs"
