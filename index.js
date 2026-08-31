@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v7.0 - Final Debugged ==========
+// ========== ID Finder Bot v7.1 - Diagnostic + Anti-Spam ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517"; // آیدی کانال یادبگیریم
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -73,19 +73,25 @@ export default {
       const chatId = msg.chat.id;
       const userId = msg.from ? msg.from.id : null;
 
-      // ۱) پیام در کانال (عمومی یا خصوصی)
+      // ۱) پیام در کانال
       if (msg.chat.type === 'channel') {
-        const id = msg.chat.id;
-        const title = msg.chat.title || 'Unknown';
-        const username = msg.chat.username ? '@' + msg.chat.username : '(خصوصی)';
-        const replyText = `🆔 *شناسه این کانال:*\n\n🔢 عددی: \`${id}\`\n📛 نام: ${title}\n🔗 آیدی: ${username}`;
-        await baleApi(token, 'sendMessage', { chat_id: chatId, text: replyText, parse_mode: 'Markdown' });
-        console.log(`📢 Channel Detected: ID=${id}`);
+        const cid = chatId.toString();
+        // ✅ ضد اسپم: در کانال یادبگیریم پاسخ نده (فقط کانال‌های دیگر)
+        if (cid !== REQUIRED_CHANNEL_ID && cid !== `-100${REQUIRED_CHANNEL_ID}`) {
+          const title = msg.chat.title || 'Unknown';
+          const username = msg.chat.username ? '@' + msg.chat.username : '(خصوصی)';
+          const replyText = `🆔 *شناسه این کانال:*\n\n🔢 عددی: \`${cid}\`\n📛 نام: ${title}\n🔗 آیدی: ${username}`;
+          await baleApi(token, 'sendMessage', { chat_id: chatId, text: replyText, parse_mode: 'Markdown' });
+          console.log(`📢 Channel Detected: ID=${cid}`);
+        }
         return new Response('OK');
       }
 
       // ۲) چت خصوصی
       if (msg.chat.type === 'private' && userId) {
+
+        //  لاگ دیباگ: آیا پیام خصوصی اصلاً می‌رسد؟
+        console.log(`📨 Private from ${userId} | text=${msg.text || '(non-text)'}`);
 
         // ✅ ثبت کاربر با «هر پیام» (فقط کاربران عادی، یک‌بار و یکتا)
         if (!ADMIN_IDS.includes(userId.toString())) {
@@ -111,6 +117,22 @@ export default {
               text: `👥 *۱۰ کاربر اخیر:*\n\n${list || 'هنوز کاربری نیست.'}`,
               parse_mode: 'Markdown'
             });
+            return new Response('OK');
+          }
+          if (msg.text === '/debug') {
+            let report = `🛠 *گزارش دیباگ:*\n\n`;
+            report += `• اتصال KV: ${env.ID_FINDER_DB ? '✅ متصل' : '❌ تعریف نشده'}\n`;
+            try {
+              await env.ID_FINDER_DB.put('debug_test', JSON.stringify({ t: Date.now() }));
+              const back = await env.ID_FINDER_DB.get('debug_test', 'json');
+              report += `• تست نوشتن/خواندن KV: ${back ? '✅ موفق' : '❌ ناموفق'}\n`;
+            } catch (e) {
+              report += `• ❌ خطای KV: ${e.message}\n`;
+            }
+            const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
+            const stats = await env.ID_FINDER_DB.get('stats', 'json') || { total: 0 };
+            report += `• کاربران اخیر: ${users.length}\n• آمار کل: ${stats.total}`;
+            await baleApi(token, 'sendMessage', { chat_id: chatId, text: report, parse_mode: 'Markdown' });
             return new Response('OK');
           }
         }
@@ -225,7 +247,7 @@ async function checkStrictMembership(token, userId) {
   return false;
 }
 
-// ثبت کاربر یکتا در KV (با هر پیام، فقط یک‌بار شمارش)
+// ثبت کاربر یکتا در KV
 async function trackUser(env, userId) {
   try {
     const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
@@ -245,7 +267,6 @@ async function trackUser(env, userId) {
   }
 }
 
-// کیبورد دائمی (فقط شروع)
 function getReplyKeyboard() {
   return {
     keyboard: [[{ text: "🚀 شروع" }]],
@@ -254,7 +275,6 @@ function getReplyKeyboard() {
   };
 }
 
-// کیبورد شیشه‌ای خدمات
 function getServicesInlineKeyboard() {
   return {
     inline_keyboard: [
@@ -267,7 +287,6 @@ function getServicesInlineKeyboard() {
   };
 }
 
-// کیبورد شیشه‌ای عضویت
 function getJoinInlineKeyboard() {
   return {
     inline_keyboard: [
