@@ -2,5 +2,6 @@ name = "idyab"
 main = "index.js"
 compatibility_date = "2026-08-01"
 
-[vars]
-BALE_BOT_TOKEN = "996317935:SwTw2fk_ZUtmDyNgZdUxEBIOiBoLHA5ubNs"
+[[kv_namespaces]]
+binding = "ID_FINDER_DB"
+id = "ddf72564b43b4f3c9ab7d603d7952555"
