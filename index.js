@@ -1,10 +1,9 @@
-// ========== ID Finder Bot v7.2 - Rich Users + Copy Button ==========
+// ========== ID Finder Bot v7.4 - Clean (Auto-Track Only) ==========
 
-const REQUIRED_CHANNEL_ID = "5235764517"; // آیدی کانال یادبگیریم
+const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
 const PUBLIC_LINK = "https://ble.ir/yadbegirim";
 
-// 👑 لیست آیدی‌های ادمین
 const ADMIN_IDS = ["1381797564"];
 
 const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
@@ -29,7 +28,7 @@ export default {
       const update = await request.json();
       const token = env.BALE_BOT_TOKEN;
 
-      // --- مدیریت Callback Query (دکمه‌های شیشه‌ای) ---
+      // --- مدیریت Callback Query ---
       if (update.callback_query) {
         const cb = update.callback_query;
         const chatId = cb.message.chat.id;
@@ -76,7 +75,6 @@ export default {
       // ۱) پیام در کانال
       if (msg.chat.type === 'channel') {
         const cid = chatId.toString();
-        // ✅ ضد اسپم: در کانال یادبگیریم پاسخ نده
         if (cid !== REQUIRED_CHANNEL_ID && cid !== `-100${REQUIRED_CHANNEL_ID}`) {
           const title = msg.chat.title || 'Unknown';
           const username = msg.chat.username ? '@' + msg.chat.username : '(خصوصی)';
@@ -97,7 +95,7 @@ export default {
 
         console.log(`📨 Private from ${userId} | text=${msg.text || '(non-text)'}`);
 
-        // ✅ ثبت کاربر با «هر پیام» با اطلاعات کامل
+        // ✅ ثبت خودکار کاربر با «هر پیام» (قدیمی یا جدید)
         if (!ADMIN_IDS.includes(userId.toString())) {
           await trackUser(env, msg.from);
         }
@@ -121,7 +119,6 @@ export default {
             const copyButtons = [];
             
             recent.forEach((u, idx) => {
-              // سازگاری با داده‌های قدیمی (که فقط رشته بودند)
               const isLegacy = typeof u === 'string';
               const uid = isLegacy ? u : u.id;
               const uName = isLegacy ? '(نام ثبت نشده)' : (u.firstName || '—');
@@ -229,9 +226,8 @@ export default {
             parse_mode: 'Markdown',
             reply_markup: {
               inline_keyboard: [
-                [{ text: "📋 کپی آیدی", copy_text: { text: copyId } }],
-                [{ text: "🚀 شروع", callback_data: "dummy" }]
-              ].filter(row => row[0].callback_data !== "dummy") // فقط دکمه کپی
+                [{ text: "📋 کپی آیدی", copy_text: { text: copyId } }]
+              ]
             }
           });
           return new Response('OK');
@@ -287,7 +283,7 @@ async function checkStrictMembership(token, userId) {
   return false;
 }
 
-// ✅ ثبت کاربر کامل در KV (آیدی + نام + یوزر)
+// ✅ ثبت خودکار کاربر (قدیمی یا جدید) با اطلاعات کامل
 async function trackUser(env, user) {
   try {
     const userId = user.id.toString();
@@ -299,7 +295,6 @@ async function trackUser(env, user) {
 
     const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
     
-    // چک می‌کنیم آیا این آیدی قبلاً ثبت شده (چه به صورت رشته، چه به صورت آبجکت)
     const exists = users.some(u => {
       if (typeof u === 'string') return u === userId;
       return u.id === userId;
@@ -316,7 +311,7 @@ async function trackUser(env, user) {
 
       console.log(`📥 New user tracked: ${userId} (${user.firstName}) | Total: ${stats.total}`);
     } else {
-      // اگر کاربر قدیمی (رشته‌ای) بود، آپدیت کن به آبجکت کامل
+      // کاربر قدیمی (رشته‌ای) را به فرمت کامل ارتقا بده
       const idx = users.findIndex(u => {
         if (typeof u === 'string') return u === userId;
         return u.id === userId;
@@ -340,7 +335,6 @@ function getReplyKeyboard() {
   };
 }
 
-// ✅ دکمه‌های خدمات با دکمه کپی
 function getServicesInlineKeyboard(userId) {
   return {
     inline_keyboard: [
