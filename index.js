@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v7.1 - Diagnostic + Anti-Spam ==========
+// ========== ID Finder Bot v7.2 - Rich Users + Copy Button ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517"; // آیدی کانال یادبگیریم
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -44,7 +44,7 @@ export default {
           if (isMember) {
             await editMessage(token, chatId, cb.message.message_id,
               `✅ *عضویت تایید شد!*\n\n🆔 *شناسه شما:* \`${userId}\`\n\n${GUIDE_MESSAGE}`,
-              getServicesInlineKeyboard()
+              getServicesInlineKeyboard(userId)
             );
           } else {
             await baleApi(token, 'answerCallbackQuery', {
@@ -55,7 +55,7 @@ export default {
           if (isMember) {
             await editMessage(token, chatId, cb.message.message_id,
               `🆔 *شناسه شما:* \`${userId}\`\n\n${GUIDE_MESSAGE}`,
-              getServicesInlineKeyboard()
+              getServicesInlineKeyboard(userId)
             );
           } else {
             await baleApi(token, 'answerCallbackQuery', {
@@ -76,12 +76,17 @@ export default {
       // ۱) پیام در کانال
       if (msg.chat.type === 'channel') {
         const cid = chatId.toString();
-        // ✅ ضد اسپم: در کانال یادبگیریم پاسخ نده (فقط کانال‌های دیگر)
+        // ✅ ضد اسپم: در کانال یادبگیریم پاسخ نده
         if (cid !== REQUIRED_CHANNEL_ID && cid !== `-100${REQUIRED_CHANNEL_ID}`) {
           const title = msg.chat.title || 'Unknown';
           const username = msg.chat.username ? '@' + msg.chat.username : '(خصوصی)';
           const replyText = `🆔 *شناسه این کانال:*\n\n🔢 عددی: \`${cid}\`\n📛 نام: ${title}\n🔗 آیدی: ${username}`;
-          await baleApi(token, 'sendMessage', { chat_id: chatId, text: replyText, parse_mode: 'Markdown' });
+          await baleApi(token, 'sendMessage', {
+            chat_id: chatId,
+            text: replyText,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی", copy_text: { text: cid } }]] }
+          });
           console.log(`📢 Channel Detected: ID=${cid}`);
         }
         return new Response('OK');
@@ -90,12 +95,11 @@ export default {
       // ۲) چت خصوصی
       if (msg.chat.type === 'private' && userId) {
 
-        //  لاگ دیباگ: آیا پیام خصوصی اصلاً می‌رسد؟
         console.log(`📨 Private from ${userId} | text=${msg.text || '(non-text)'}`);
 
-        // ✅ ثبت کاربر با «هر پیام» (فقط کاربران عادی، یک‌بار و یکتا)
+        // ✅ ثبت کاربر با «هر پیام» با اطلاعات کامل
         if (!ADMIN_IDS.includes(userId.toString())) {
-          await trackUser(env, userId);
+          await trackUser(env, msg.from);
         }
 
         // --- دستورات ادمین ---
@@ -111,11 +115,31 @@ export default {
           }
           if (msg.text === '/users' || msg.text === '/user') {
             const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
-            const list = users.slice(-10).reverse().join('\n');
+            const recent = users.slice(-10).reverse();
+            
+            let list = "";
+            const copyButtons = [];
+            
+            recent.forEach((u, idx) => {
+              // سازگاری با داده‌های قدیمی (که فقط رشته بودند)
+              const isLegacy = typeof u === 'string';
+              const uid = isLegacy ? u : u.id;
+              const uName = isLegacy ? '(نام ثبت نشده)' : (u.firstName || '—');
+              const uUser = isLegacy ? '—' : (u.username ? '@' + u.username : '(ندارد)');
+              
+              list += `\n${idx + 1}️⃣ \`${uid}\`\n   📛 ${uName}\n   🔗 ${uUser}\n`;
+              copyButtons.push([{ text: `${idx + 1}️⃣ ${uName}`, copy_text: { text: uid } }]);
+            });
+            
+            const text = recent.length > 0
+              ? `👥 *۱۰ کاربر اخیر:*\n${list}\n💡 روی دکمه‌های زیر بزنید تا آیدی کپی شود:`
+              : '👥 *۱۰ کاربر اخیر:*\n\nهنوز کاربری ثبت نشده است.';
+            
             await baleApi(token, 'sendMessage', {
               chat_id: chatId,
-              text: `👥 *۱۰ کاربر اخیر:*\n\n${list || 'هنوز کاربری نیست.'}`,
-              parse_mode: 'Markdown'
+              text: text,
+              parse_mode: 'Markdown',
+              reply_markup: recent.length > 0 ? { inline_keyboard: copyButtons } : undefined
             });
             return new Response('OK');
           }
@@ -156,7 +180,7 @@ export default {
               chat_id: chatId,
               text: `✅ خوش آمدید!\n\n🆔 *شناسه شما:* \`${userId}\``,
               parse_mode: 'Markdown',
-              reply_markup: getServicesInlineKeyboard()
+              reply_markup: getServicesInlineKeyboard(userId)
             });
           } else {
             await baleApi(token, 'sendMessage', {
@@ -183,17 +207,32 @@ export default {
           }
 
           let replyText = "";
+          let copyId = "";
+          
           if (msg.forward_from) {
-            replyText = `👤 *شناسه کاربر:*\n\n🔢 \`${msg.forward_from.id}\`\n👤 نام: ${msg.forward_from.first_name}`;
+            const fwdId = msg.forward_from.id.toString();
+            const fwdName = msg.forward_from.first_name + (msg.forward_from.last_name ? ' ' + msg.forward_from.last_name : '');
+            const fwdUser = msg.forward_from.username ? '@' + msg.forward_from.username : '(ندارد)';
+            replyText = `👤 *شناسه کاربر:*\n\n🔢 \`${fwdId}\`\n👤 نام: ${fwdName}\n🔗 یوزر: ${fwdUser}`;
+            copyId = fwdId;
           } else if (msg.forward_from_chat) {
-            replyText = `📢 *شناسه منبع:*\n\n🔢 \`${msg.forward_from_chat.id}\`\n📛 نام: ${msg.forward_from_chat.title}`;
+            const fwdId = msg.forward_from_chat.id.toString();
+            const fwdTitle = msg.forward_from_chat.title || 'Unknown';
+            const fwdUser = msg.forward_from_chat.username ? '@' + msg.forward_from_chat.username : '(خصوصی)';
+            replyText = `📢 *شناسه منبع:*\n\n🔢 \`${fwdId}\`\n📛 نام: ${fwdTitle}\n🔗 آیدی: ${fwdUser}`;
+            copyId = fwdId;
           }
 
           await baleApi(token, 'sendMessage', {
             chat_id: chatId,
             text: replyText + `\n\n${GUIDE_MESSAGE}`,
             parse_mode: 'Markdown',
-            reply_markup: getReplyKeyboard()
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "📋 کپی آیدی", copy_text: { text: copyId } }],
+                [{ text: "🚀 شروع", callback_data: "dummy" }]
+              ].filter(row => row[0].callback_data !== "dummy") // فقط دکمه کپی
+            }
           });
           return new Response('OK');
         }
@@ -201,12 +240,14 @@ export default {
 
       // ۳) گروه‌ها
       if (msg.chat.type === 'supergroup' || msg.chat.type === 'group') {
-        const id = msg.chat.id;
+        const id = msg.chat.id.toString();
         const title = msg.chat.title || 'Unknown';
+        const username = msg.chat.username ? '@' + msg.chat.username : '(بدون یوزر)';
         await baleApi(token, 'sendMessage', {
           chat_id: chatId,
-          text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}`,
-          parse_mode: 'Markdown'
+          text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}\n🔗 آیدی: ${username}`,
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی", copy_text: { text: id } }]] }
         });
       }
 
@@ -234,7 +275,6 @@ async function baleApi(token, method, data) {
   }
 }
 
-// بررسی سخت‌گیرانه عضویت در کانال
 async function checkStrictMembership(token, userId) {
   const res = await baleApi(token, 'getChatMember', {
     chat_id: REQUIRED_CHANNEL_ID,
@@ -247,12 +287,26 @@ async function checkStrictMembership(token, userId) {
   return false;
 }
 
-// ثبت کاربر یکتا در KV
-async function trackUser(env, userId) {
+// ✅ ثبت کاربر کامل در KV (آیدی + نام + یوزر)
+async function trackUser(env, user) {
   try {
+    const userId = user.id.toString();
+    const userObj = {
+      id: userId,
+      firstName: user.first_name || '',
+      username: user.username || ''
+    };
+
     const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
-    if (!users.includes(userId.toString())) {
-      users.push(userId.toString());
+    
+    // چک می‌کنیم آیا این آیدی قبلاً ثبت شده (چه به صورت رشته، چه به صورت آبجکت)
+    const exists = users.some(u => {
+      if (typeof u === 'string') return u === userId;
+      return u.id === userId;
+    });
+
+    if (!exists) {
+      users.push(userObj);
       if (users.length > 50) users.shift();
       await env.ID_FINDER_DB.put('recent_users', JSON.stringify(users));
 
@@ -260,7 +314,18 @@ async function trackUser(env, userId) {
       stats.total++;
       await env.ID_FINDER_DB.put('stats', JSON.stringify(stats));
 
-      console.log(`📥 New user tracked: ${userId} | Total: ${stats.total}`);
+      console.log(`📥 New user tracked: ${userId} (${user.firstName}) | Total: ${stats.total}`);
+    } else {
+      // اگر کاربر قدیمی (رشته‌ای) بود، آپدیت کن به آبجکت کامل
+      const idx = users.findIndex(u => {
+        if (typeof u === 'string') return u === userId;
+        return u.id === userId;
+      });
+      if (idx !== -1 && typeof users[idx] === 'string') {
+        users[idx] = userObj;
+        await env.ID_FINDER_DB.put('recent_users', JSON.stringify(users));
+        console.log(`🔄 Upgraded legacy user: ${userId}`);
+      }
     }
   } catch (e) {
     console.error('KV Error:', e);
@@ -275,13 +340,15 @@ function getReplyKeyboard() {
   };
 }
 
-function getServicesInlineKeyboard() {
+// ✅ دکمه‌های خدمات با دکمه کپی
+function getServicesInlineKeyboard(userId) {
   return {
     inline_keyboard: [
       [
         { text: "🆔 آیدی من", callback_data: "get_my_id_inline" },
         { text: "🔄 بررسی عضویت", callback_data: "check_membership_inline" }
       ],
+      [{ text: "📋 کپی آیدی من", copy_text: { text: userId.toString() } }],
       [{ text: "📢 کانال یادبگیریم", url: PUBLIC_LINK }]
     ]
   };
