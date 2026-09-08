@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v7.5 - Improved Stability & Group Behavior ==========
+// ========== ID Finder Bot v8.0 - D1 Migration + Broadcasting ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -24,7 +24,7 @@ export default {
     // تنظیم وب‌هوک (اختیاری)
     if (request.method === 'POST') {
       const url = new URL(request.url);
-      // استفاده از env.WEBHOOK_SECRET به جای متغیر ثابت
+      // استفاده از env.WEBHOOK_SECRET
       if (url.pathname === '/webhook' && url.searchParams.get('secret') === env.WEBHOOK_SECRET) {
         const token = env.BALE_BOT_TOKEN;
         if (!token) return new Response('Missing token', { status: 500 });
@@ -142,6 +142,7 @@ export default {
       if (msg.chat.type === 'private' && userId) {
         console.log(`📨 Private from ${userId} | text=${msg.text || '(non-text)'}`);
 
+        // ثبت خودکار کاربر در D1 (فقط غیر ادمین)
         if (!ADMIN_IDS.includes(userId.toString())) {
           await trackUser(env, msg.from);
         }
@@ -149,32 +150,35 @@ export default {
         // --- دستورات ادمین ---
         if (ADMIN_IDS.includes(userId.toString())) {
           if (msg.text === '/stats') {
-            const stats = await env.ID_FINDER_DB.get('stats', 'json') || { total: 0 };
+            // خواندن آمار از D1
+            const result = await env.DB.prepare("SELECT value FROM stats WHERE key = 'total'").first();
+            const total = result ? result.value : 0;
             await baleApi(token, 'sendMessage', {
               chat_id: chatId,
-              text: `📊 *آمار ربات:*\n\n👥 تعداد کل کاربران ثبت شده: ${stats.total}`,
+              text: `📊 *آمار ربات:*\n\n👥 تعداد کل کاربران ثبت شده: ${total}`,
               parse_mode: 'Markdown'
             });
             return new Response('OK');
           }
           if (msg.text === '/users' || msg.text === '/user') {
-            const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
-            const recent = users.slice(-10).reverse();
+            // خواندن ۱۰ کاربر اخیر از D1
+            const { results } = await env.DB.prepare(
+              "SELECT user_id, first_name, username FROM users ORDER BY created_at DESC LIMIT 10"
+            ).all();
             
             let list = "";
             const copyButtons = [];
             
-            recent.forEach((u, idx) => {
-              const isLegacy = typeof u === 'string';
-              const uid = isLegacy ? u : u.id;
-              const uName = isLegacy ? '(نام ثبت نشده)' : (u.firstName || '—');
-              const uUser = isLegacy ? '—' : (u.username ? '@' + u.username : '(ندارد)');
+            results.forEach((u, idx) => {
+              const uid = u.user_id;
+              const uName = u.first_name || '—';
+              const uUser = u.username ? '@' + u.username : '(ندارد)';
               
               list += `\n${idx + 1}️⃣ \`${uid}\`\n   📛 ${uName}\n   🔗 ${uUser}\n`;
               copyButtons.push([{ text: `${idx + 1}️⃣ ${uName}`, copy_text: { text: uid } }]);
             });
             
-            const text = recent.length > 0
+            const text = results.length > 0
               ? `👥 *۱۰ کاربر اخیر:*\n${list}\n💡 روی دکمه‌های زیر بزنید تا آیدی کپی شود:`
               : '👥 *۱۰ کاربر اخیر:*\n\nهنوز کاربری ثبت نشده است.';
             
@@ -182,24 +186,96 @@ export default {
               chat_id: chatId,
               text: text,
               parse_mode: 'Markdown',
-              reply_markup: recent.length > 0 ? { inline_keyboard: copyButtons } : undefined
+              reply_markup: results.length > 0 ? { inline_keyboard: copyButtons } : undefined
             });
             return new Response('OK');
           }
           if (msg.text === '/debug') {
             let report = `🛠 *گزارش دیباگ:*\n\n`;
-            report += `• اتصال KV: ${env.ID_FINDER_DB ? '✅ متصل' : '❌ تعریف نشده'}\n`;
+            report += `• اتصال D1: ${env.DB ? '✅ متصل' : '❌ تعریف نشده'}\n`;
             try {
-              await env.ID_FINDER_DB.put('debug_test', JSON.stringify({ t: Date.now() }));
-              const back = await env.ID_FINDER_DB.get('debug_test', 'json');
-              report += `• تست نوشتن/خواندن KV: ${back ? '✅ موفق' : '❌ ناموفق'}\n`;
+              // تست نوشتن و خواندن در D1
+              await env.DB.prepare("INSERT OR IGNORE INTO stats (key, value) VALUES ('debug', 1)").run();
+              const back = await env.DB.prepare("SELECT value FROM stats WHERE key = 'debug'").first();
+              report += `• تست نوشتن/خواندن D1: ${back ? '✅ موفق' : '❌ ناموفق'}\n`;
             } catch (e) {
-              report += `• ❌ خطای KV: ${e.message}\n`;
+              report += `• ❌ خطای D1: ${e.message}\n`;
             }
-            const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
-            const stats = await env.ID_FINDER_DB.get('stats', 'json') || { total: 0 };
-            report += `• کاربران اخیر: ${users.length}\n• آمار کل: ${stats.total}`;
+            const { results } = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
+            const totalUsers = results ? results.count : 0;
+            report += `• تعداد کل کاربران: ${totalUsers}`;
             await baleApi(token, 'sendMessage', { chat_id: chatId, text: report, parse_mode: 'Markdown' });
+            return new Response('OK');
+          }
+          
+          // --- ارسال پیام به یک کاربر یا گروه خاص (تکی) ---
+          if (msg.text === '/sendto' || (msg.text && msg.text.startsWith('/sendto '))) {
+            const parts = msg.text.split(' ');
+            if (parts.length < 3) {
+              await baleApi(token, 'sendMessage', {
+                chat_id: chatId,
+                text: `❗️ نحوه استفاده:\n/sendto <آیدی> <متن>\n\nمثال:\n/sendto 123456789 سلام دوست عزیز!`
+              });
+              return new Response('OK');
+            }
+            const targetId = parts[1];
+            const sendText = parts.slice(2).join(' ');
+            const res = await baleApi(token, 'sendMessage', { chat_id: targetId, text: sendText });
+            if (res) {
+              await baleApi(token, 'sendMessage', { chat_id: chatId, text: `✅ پیام با موفقیت به ${targetId} ارسال شد.` });
+            } else {
+              await baleApi(token, 'sendMessage', { chat_id: chatId, text: `❌ ارسال به ${targetId} ناموفق بود. (احتمالا بات را بلاک کرده یا آیدی اشتباه است)` });
+            }
+            return new Response('OK');
+          }
+
+          // --- ارسال دسته‌ای (Broadcast) به تمام کاربران ثبت شده ---
+          if (msg.text === '/broadcast' || (msg.text && msg.text.startsWith('/broadcast '))) {
+            let textToSend = '';
+            if (msg.text.startsWith('/broadcast ')) {
+              textToSend = msg.text.substring('/broadcast '.length);
+            } else if (msg.reply_to_message && msg.reply_to_message.text) {
+              textToSend = msg.reply_to_message.text;
+            }
+
+            if (!textToSend) {
+              await baleApi(token, 'sendMessage', {
+                chat_id: chatId,
+                text: `❗️ لطفاً متن پیام را بنویسید یا به یک پیام ریپلای کنید.\nمثال:\n/broadcast سلام به همه دوستان`
+              });
+              return new Response('OK');
+            }
+
+            // خواندن تمام کاربران از D1
+            const { results } = await env.DB.prepare("SELECT user_id FROM users").all();
+            if (results.length === 0) {
+              await baleApi(token, 'sendMessage', { chat_id: chatId, text: '⚠️ هنوز کاربری برای ارسال پیام ثبت نشده است.' });
+              return new Response('OK');
+            }
+
+            let successCount = 0;
+            let failCount = 0;
+
+            // ارسال در دسته‌های ۲۰ تایی برای جلوگیری از تایم‌اوت
+            const chunkSize = 20;
+            for (let i = 0; i < results.length; i += chunkSize) {
+               const batch = results.slice(i, i + chunkSize);
+               for (const u of batch) {
+                 const uId = u.user_id;
+                 const res = await baleApi(token, 'sendMessage', {
+                   chat_id: uId,
+                   text: textToSend
+                 });
+                 if (res) successCount++;
+                 else failCount++;
+               }
+            }
+
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: `📨 *گزارش ارسال دسته‌ای:*\n\n✅ موفق: ${successCount}\n❌ ناموفق: ${failCount}\n\n(تعداد کل کاربران فعلی: ${results.length})`,
+              parse_mode: 'Markdown'
+            });
             return new Response('OK');
           }
         }
@@ -357,47 +433,21 @@ async function getBotId(token) {
   return res && res.result ? res.result.id : null;
 }
 
+// تابع ثبت کاربر با D1 (جایگزین نسخه KV)
 async function trackUser(env, user) {
   if (!user) return;
-  try {
-    const userId = user.id.toString();
-    const userObj = {
-      id: userId,
-      firstName: user.first_name || '',
-      username: user.username || ''
-    };
+  const userId = user.id.toString();
+  const firstName = user.first_name || '';
+  const username = user.username || '';
 
-    const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
-    
-    const exists = users.some(u => {
-      if (typeof u === 'string') return u === userId;
-      return u.id === userId;
-    });
+  // درج کاربر جدید اگر وجود نداشته باشد
+  await env.DB.prepare(
+    "INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)"
+  ).bind(userId, firstName, username).run();
 
-    if (!exists) {
-      users.push(userObj);
-      if (users.length > 50) users.shift();
-      await env.ID_FINDER_DB.put('recent_users', JSON.stringify(users));
-
-      const stats = await env.ID_FINDER_DB.get('stats', 'json') || { total: 0 };
-      stats.total++;
-      await env.ID_FINDER_DB.put('stats', JSON.stringify(stats));
-
-      console.log(`📥 New user tracked: ${userId} (${user.firstName}) | Total: ${stats.total}`);
-    } else {
-      const idx = users.findIndex(u => {
-        if (typeof u === 'string') return u === userId;
-        return u.id === userId;
-      });
-      if (idx !== -1 && typeof users[idx] === 'string') {
-        users[idx] = userObj;
-        await env.ID_FINDER_DB.put('recent_users', JSON.stringify(users));
-        console.log(`🔄 Upgraded legacy user: ${userId}`);
-      }
-    }
-  } catch (e) {
-    console.error('KV Error:', e);
-  }
+  // به‌روزرسانی شمارنده آمار
+  await env.DB.prepare("INSERT OR IGNORE INTO stats (key, value) VALUES ('total', 0)").run();
+  await env.DB.prepare("UPDATE stats SET value = value + 1 WHERE key = 'total'").run();
 }
 
 function getReplyKeyboard() {
