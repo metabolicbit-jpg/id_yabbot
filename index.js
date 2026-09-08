@@ -4,7 +4,6 @@ const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
 const PUBLIC_LINK = "https://ble.ir/yadbegirim";
 const ADMIN_IDS = ["1381797564"];
-if (url.searchParams.get('secret') === env.WEBHOOK_SECRET) {
 
 const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 
@@ -25,7 +24,7 @@ export default {
     // تنظیم وب‌هوک (اختیاری)
     if (request.method === 'POST') {
       const url = new URL(request.url);
-      if (url.pathname === '/webhook' && url.searchParams.get('secret') === WEBHOOK_SECRET) {
+      if (url.pathname === '/webhook' && url.searchParams.get('secret') === env.WEBHOOK_SECRET) {
         const token = env.BALE_BOT_TOKEN;
         if (!token) return new Response('Missing token', { status: 500 });
         
@@ -53,14 +52,12 @@ export default {
       // --- مدیریت Callback Query ---
       if (update.callback_query) {
         const cb = update.callback_query;
-        // اطمینان از وجود message
         if (!cb.message || !cb.message.chat) return new Response('OK');
 
         const chatId = cb.message.chat.id;
         const userId = cb.from.id;
         const data = cb.data;
 
-        // پاسخ به callback برای جلوگیری از چرخش
         await baleApi(token, 'answerCallbackQuery', { callback_query_id: cb.id });
 
         const isMember = await checkStrictMembership(token, userId);
@@ -98,13 +95,11 @@ export default {
         const newStatus = mcm.new_chat_member.status;
         const chatType = chat.type;
 
-        // فقط وقتی بات به گروه اضافه می‌شود (بررسی اینکه آیا بات است؟)
         if (mcm.from.id !== (await getBotId(token))) {
-          // اگر از طرف خود بات نبود، می‌توانیم تشخیص دهیم که به گروه اضافه شده است
+          // اگر از طرف خود بات نبود
         }
 
         if (chatType === 'group' || chatType === 'supergroup') {
-          // اگر وضعیت جدید 'member' یا 'administrator' باشد یعنی بات اضافه شده
           if (newStatus === 'member' || newStatus === 'administrator') {
             const id = chat.id.toString();
             const title = chat.title || 'Unknown';
@@ -150,7 +145,6 @@ export default {
       if (msg.chat.type === 'private' && userId) {
         console.log(`📨 Private from ${userId} | text=${msg.text || '(non-text)'}`);
 
-        // ثبت خودکار کاربر (فقط غیر ادمین)
         if (!ADMIN_IDS.includes(userId.toString())) {
           await trackUser(env, msg.from);
         }
@@ -310,7 +304,6 @@ export default {
             reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی", copy_text: { text: id } }]] }
           });
         }
-        // پیام‌های دیگر نادیده گرفته می‌شوند
         return new Response('OK');
       }
 
@@ -323,7 +316,6 @@ export default {
 
 // --- توابع کمکی ---
 
-// تابع بهبود یافته baleApi: بررسی کد HTTP و پاسخ OK
 async function baleApi(token, method, data) {
   const url = `https://tapi.bale.ai/bot${token}/${method}`;
   try {
@@ -350,7 +342,6 @@ async function baleApi(token, method, data) {
   }
 }
 
-// بررسی عضویت سخت‌گیرانه با ایمنی در برابر null
 async function checkStrictMembership(token, userId) {
   const res = await baleApi(token, 'getChatMember', {
     chat_id: REQUIRED_CHANNEL_ID,
@@ -364,13 +355,11 @@ async function checkStrictMembership(token, userId) {
   return false;
 }
 
-// دریافت آیدی خود ربات (برای مقایسه در my_chat_member)
 async function getBotId(token) {
   const res = await baleApi(token, 'getMe', {});
   return res && res.result ? res.result.id : null;
 }
 
-// ثبت خودکار کاربر با مدیریت خطا
 async function trackUser(env, user) {
   if (!user) return;
   try {
