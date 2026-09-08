@@ -24,6 +24,7 @@ export default {
     // تنظیم وب‌هوک (اختیاری)
     if (request.method === 'POST') {
       const url = new URL(request.url);
+      // استفاده از env.WEBHOOK_SECRET به جای متغیر ثابت
       if (url.pathname === '/webhook' && url.searchParams.get('secret') === env.WEBHOOK_SECRET) {
         const token = env.BALE_BOT_TOKEN;
         if (!token) return new Response('Missing token', { status: 500 });
@@ -94,10 +95,6 @@ export default {
         const chat = mcm.chat;
         const newStatus = mcm.new_chat_member.status;
         const chatType = chat.type;
-
-        if (mcm.from.id !== (await getBotId(token))) {
-          // اگر از طرف خود بات نبود
-        }
 
         if (chatType === 'group' || chatType === 'supergroup') {
           if (newStatus === 'member' || newStatus === 'administrator') {
