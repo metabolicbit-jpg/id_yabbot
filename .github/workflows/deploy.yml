@@ -17,4 +17,5 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         env:
+          NODE_VERSION: '22'
           BALE_BOT_TOKEN: ${{ secrets.BALE_BOT_TOKEN }}
