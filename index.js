@@ -1,10 +1,10 @@
-// ========== ID Finder Bot v7.4 - Clean (Auto-Track Only) ==========
+// ========== ID Finder Bot v7.5 - Improved Stability & Group Behavior ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
 const PUBLIC_LINK = "https://ble.ir/yadbegirim";
-
 const ADMIN_IDS = ["1381797564"];
+const WEBHOOK_SECRET = "57248d8c154e5f30253f570dbc699b2ec2c17cce20119acbe41f54c7488e27ad"; // برای امنیت تنظیم وب‌هوک
 
 const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 
@@ -22,19 +22,45 @@ const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 
 export default {
   async fetch(request, env) {
-    if (request.method !== 'POST') return new Response('ID Finder Tool is running!');
+    // تنظیم وب‌هوک (اختیاری)
+    if (request.method === 'POST') {
+      const url = new URL(request.url);
+      if (url.pathname === '/webhook' && url.searchParams.get('secret') === WEBHOOK_SECRET) {
+        const token = env.BALE_BOT_TOKEN;
+        if (!token) return new Response('Missing token', { status: 500 });
+        
+        const webhookUrl = `https://${url.hostname}/webhook`;
+        const res = await baleApi(token, 'setWebhook', { url: webhookUrl });
+        if (res) {
+          return new Response(JSON.stringify({ ok: res.ok, description: res.description }), {
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        return new Response('Failed to set webhook', { status: 500 });
+      }
+    }
+
+    // فقط POST مجاز است
+    if (request.method !== 'POST') {
+      return new Response('ID Finder Tool is running!');
+    }
 
     try {
       const update = await request.json();
       const token = env.BALE_BOT_TOKEN;
+      if (!token) return new Response('Missing token', { status: 500 });
 
       // --- مدیریت Callback Query ---
       if (update.callback_query) {
         const cb = update.callback_query;
+        // اطمینان از وجود message
+        if (!cb.message || !cb.message.chat) return new Response('OK');
+
         const chatId = cb.message.chat.id;
         const userId = cb.from.id;
         const data = cb.data;
 
+        // پاسخ به callback برای جلوگیری از چرخش
         await baleApi(token, 'answerCallbackQuery', { callback_query_id: cb.id });
 
         const isMember = await checkStrictMembership(token, userId);
@@ -60,6 +86,36 @@ export default {
             await baleApi(token, 'answerCallbackQuery', {
               callback_query_id: cb.id, text: 'لطفاً ابتدا عضو شوید.', show_alert: true
             });
+          }
+        }
+        return new Response('OK');
+      }
+
+      // --- مدیریت رویداد اضافه شدن بات به گروه ---
+      if (update.my_chat_member) {
+        const mcm = update.my_chat_member;
+        const chat = mcm.chat;
+        const newStatus = mcm.new_chat_member.status;
+        const chatType = chat.type;
+
+        // فقط وقتی بات به گروه اضافه می‌شود (بررسی اینکه آیا بات است؟)
+        if (mcm.from.id !== (await getBotId(token))) {
+          // اگر از طرف خود بات نبود، می‌توانیم تشخیص دهیم که به گروه اضافه شده است
+        }
+
+        if (chatType === 'group' || chatType === 'supergroup') {
+          // اگر وضعیت جدید 'member' یا 'administrator' باشد یعنی بات اضافه شده
+          if (newStatus === 'member' || newStatus === 'administrator') {
+            const id = chat.id.toString();
+            const title = chat.title || 'Unknown';
+            const username = chat.username ? '@' + chat.username : '(بدون یوزر)';
+            await baleApi(token, 'sendMessage', {
+              chat_id: id,
+              text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}\n🔗 آیدی: ${username}`,
+              parse_mode: 'Markdown',
+              reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی", copy_text: { text: id } }]] }
+            });
+            console.log(`📢 Bot added to group: ID=${id}`);
           }
         }
         return new Response('OK');
@@ -92,10 +148,9 @@ export default {
 
       // ۲) چت خصوصی
       if (msg.chat.type === 'private' && userId) {
-
         console.log(`📨 Private from ${userId} | text=${msg.text || '(non-text)'}`);
 
-        // ✅ ثبت خودکار کاربر با «هر پیام» (قدیمی یا جدید)
+        // ثبت خودکار کاربر (فقط غیر ادمین)
         if (!ADMIN_IDS.includes(userId.toString())) {
           await trackUser(env, msg.from);
         }
@@ -232,19 +287,31 @@ export default {
           });
           return new Response('OK');
         }
-      }
 
-      // ۳) گروه‌ها
-      if (msg.chat.type === 'supergroup' || msg.chat.type === 'group') {
-        const id = msg.chat.id.toString();
-        const title = msg.chat.title || 'Unknown';
-        const username = msg.chat.username ? '@' + msg.chat.username : '(بدون یوزر)';
+        // د) پیام‌های دیگر در چت خصوصی (راهنما)
         await baleApi(token, 'sendMessage', {
           chat_id: chatId,
-          text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}\n🔗 آیدی: ${username}`,
-          parse_mode: 'Markdown',
-          reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی", copy_text: { text: id } }]] }
+          text: `❓ برای دریافت آیدی خود روی دکمه «🚀 شروع» بزنید یا پیام کاربر دیگری را فوروارد کنید.\n\n${GUIDE_MESSAGE}`,
+          reply_markup: getReplyKeyboard()
         });
+        return new Response('OK');
+      }
+
+      // ۳) گروه‌ها (اگر پیامی با دستور /id باشد)
+      if (msg.chat.type === 'supergroup' || msg.chat.type === 'group') {
+        if (msg.text === '/id' || msg.text === '/ID' || msg.text === '/آیدی') {
+          const id = msg.chat.id.toString();
+          const title = msg.chat.title || 'Unknown';
+          const username = msg.chat.username ? '@' + msg.chat.username : '(بدون یوزر)';
+          await baleApi(token, 'sendMessage', {
+            chat_id: chatId,
+            text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}\n🔗 آیدی: ${username}`,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی", copy_text: { text: id } }]] }
+          });
+        }
+        // پیام‌های دیگر نادیده گرفته می‌شوند
+        return new Response('OK');
       }
 
     } catch (e) {
@@ -256,6 +323,7 @@ export default {
 
 // --- توابع کمکی ---
 
+// تابع بهبود یافته baleApi: بررسی کد HTTP و پاسخ OK
 async function baleApi(token, method, data) {
   const url = `https://tapi.bale.ai/bot${token}/${method}`;
   try {
@@ -264,27 +332,47 @@ async function baleApi(token, method, data) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    return await res.json();
+    
+    if (!res.ok) {
+      console.error(`API error in ${method}: status ${res.status}`);
+      return null;
+    }
+    
+    const json = await res.json();
+    if (!json.ok) {
+      console.error(`API error in ${method}: ${json.description}`);
+      return null;
+    }
+    return json;
   } catch (e) {
-    console.error(`API Error in ${method}:`, e);
+    console.error(`Fetch error in ${method}:`, e);
     return null;
   }
 }
 
+// بررسی عضویت سخت‌گیرانه با ایمنی در برابر null
 async function checkStrictMembership(token, userId) {
   const res = await baleApi(token, 'getChatMember', {
     chat_id: REQUIRED_CHANNEL_ID,
     user_id: userId
   });
-  if (res && res.ok) {
+  
+  if (res && res.ok && res.result) {
     const status = res.result.status;
     return ['member', 'administrator', 'creator'].includes(status);
   }
   return false;
 }
 
-// ✅ ثبت خودکار کاربر (قدیمی یا جدید) با اطلاعات کامل
+// دریافت آیدی خود ربات (برای مقایسه در my_chat_member)
+async function getBotId(token) {
+  const res = await baleApi(token, 'getMe', {});
+  return res && res.result ? res.result.id : null;
+}
+
+// ثبت خودکار کاربر با مدیریت خطا
 async function trackUser(env, user) {
+  if (!user) return;
   try {
     const userId = user.id.toString();
     const userObj = {
@@ -311,7 +399,6 @@ async function trackUser(env, user) {
 
       console.log(`📥 New user tracked: ${userId} (${user.firstName}) | Total: ${stats.total}`);
     } else {
-      // کاربر قدیمی (رشته‌ای) را به فرمت کامل ارتقا بده
       const idx = users.findIndex(u => {
         if (typeof u === 'string') return u === userId;
         return u.id === userId;
