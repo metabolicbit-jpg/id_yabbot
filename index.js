@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v8.2 - Final D1 Version (No KV, No Migrate) ==========
+// ========== ID Finder Bot v8.3 - Final D1 Version with Invite & Auto-Track ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -63,6 +63,9 @@ export default {
 
         if (data === 'check_membership_inline') {
           if (isMember) {
+            // ✅ ثبت خودکار کاربر در D1 هنگام کلیک روی دکمه بررسی عضویت
+            await trackUser(env, cb.from);
+
             await editMessage(token, chatId, cb.message.message_id,
               `✅ *عضویت تایید شد!*\n\n🆔 *شناسه شما:* \`${userId}\`\n\n${GUIDE_MESSAGE}`,
               getServicesInlineKeyboard(userId)
@@ -268,6 +271,24 @@ export default {
               chat_id: chatId,
               text: `📨 *گزارش ارسال دسته‌ای:*\n\n✅ موفق: ${successCount}\n❌ ناموفق: ${failCount}\n\n(تعداد کل کاربران فعلی: ${results.length})`,
               parse_mode: 'Markdown'
+            });
+            return new Response('OK');
+          }
+
+          // --- دستور ارسال پیام دعوت با لینک مستقیم به بات ---
+          if (msg.text === '/invite') {
+            // ⚠️ توجه: "YourBotUsername" را با نام کاربری واقعی ربات خود جایگزین کنید!
+            const inviteText = `📢 برای دریافت آیدی خود و استفاده از خدمات، همین حالا روی دکمه زیر بزنید:\n\n[🚀 شروع استفاده از بات](https://t.me/YourBotUsername?start=invite)`;
+            
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: inviteText,
+              parse_mode: 'Markdown',
+              reply_markup: {
+                inline_keyboard: [
+                  [{ text: "🚀 عضویت و شروع", url: "https://t.me/YourBotUsername?start=invite" }]
+                ]
+              }
             });
             return new Response('OK');
           }
