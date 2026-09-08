@@ -16,7 +16,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          secrets: |
-            BALE_BOT_TOKEN
         env:
           BALE_BOT_TOKEN: ${{ secrets.BALE_BOT_TOKEN }}
