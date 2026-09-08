@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v8.0 - D1 Migration + Broadcasting ==========
+// ========== ID Finder Bot v8.1 - D1 Migration + Broadcasting ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -24,7 +24,6 @@ export default {
     // تنظیم وب‌هوک (اختیاری)
     if (request.method === 'POST') {
       const url = new URL(request.url);
-      // استفاده از env.WEBHOOK_SECRET
       if (url.pathname === '/webhook' && url.searchParams.get('secret') === env.WEBHOOK_SECRET) {
         const token = env.BALE_BOT_TOKEN;
         if (!token) return new Response('Missing token', { status: 500 });
@@ -150,7 +149,6 @@ export default {
         // --- دستورات ادمین ---
         if (ADMIN_IDS.includes(userId.toString())) {
           if (msg.text === '/stats') {
-            // خواندن آمار از D1
             const result = await env.DB.prepare("SELECT value FROM stats WHERE key = 'total'").first();
             const total = result ? result.value : 0;
             await baleApi(token, 'sendMessage', {
@@ -161,7 +159,6 @@ export default {
             return new Response('OK');
           }
           if (msg.text === '/users' || msg.text === '/user') {
-            // خواندن ۱۰ کاربر اخیر از D1
             const { results } = await env.DB.prepare(
               "SELECT user_id, first_name, username FROM users ORDER BY created_at DESC LIMIT 10"
             ).all();
@@ -193,8 +190,8 @@ export default {
           if (msg.text === '/debug') {
             let report = `🛠 *گزارش دیباگ:*\n\n`;
             report += `• اتصال D1: ${env.DB ? '✅ متصل' : '❌ تعریف نشده'}\n`;
+            report += `• اتصال KV: ${env.ID_FINDER_DB ? '✅ متصل (برای مهاجرت)' : '❌ حذف شده'}\n`;
             try {
-              // تست نوشتن و خواندن در D1
               await env.DB.prepare("INSERT OR IGNORE INTO stats (key, value) VALUES ('debug', 1)").run();
               const back = await env.DB.prepare("SELECT value FROM stats WHERE key = 'debug'").first();
               report += `• تست نوشتن/خواندن D1: ${back ? '✅ موفق' : '❌ ناموفق'}\n`;
@@ -205,6 +202,41 @@ export default {
             const totalUsers = results ? results.count : 0;
             report += `• تعداد کل کاربران: ${totalUsers}`;
             await baleApi(token, 'sendMessage', { chat_id: chatId, text: report, parse_mode: 'Markdown' });
+            return new Response('OK');
+          }
+
+          // --- دستور مهاجرت داده‌ها از KV به D1 ---
+          if (msg.text === '/migrate') {
+            const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
+            const stats = await env.ID_FINDER_DB.get('stats', 'json') || { total: 0 };
+
+            if (users.length === 0) {
+              await baleApi(token, 'sendMessage', { chat_id: chatId, text: '⚠️ هیچ داده‌ای در KV پیدا نشد!' });
+              return new Response('OK');
+            }
+
+            let migrated = 0;
+            for (const u of users) {
+              const uid = typeof u === 'string' ? u : u.id;
+              const firstName = typeof u === 'string' ? '' : (u.firstName || '');
+              const username = typeof u === 'string' ? '' : (u.username || '');
+
+              await env.DB.prepare(
+                "INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)"
+              ).bind(uid, firstName, username).run();
+              migrated++;
+            }
+
+            await env.DB.prepare("INSERT OR IGNORE INTO stats (key, value) VALUES ('total', 0)").run();
+            if (stats.total > 0) {
+              await env.DB.prepare("UPDATE stats SET value = ? WHERE key = 'total'").bind(stats.total).run();
+            }
+
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: `✅ *مهاجرت با موفقیت انجام شد!*\n\n📦 داده‌های منتقل شده: ${migrated} کاربر\n👥 آمار کل: ${stats.total} کاربر`,
+              parse_mode: 'Markdown'
+            });
             return new Response('OK');
           }
           
@@ -246,7 +278,6 @@ export default {
               return new Response('OK');
             }
 
-            // خواندن تمام کاربران از D1
             const { results } = await env.DB.prepare("SELECT user_id FROM users").all();
             if (results.length === 0) {
               await baleApi(token, 'sendMessage', { chat_id: chatId, text: '⚠️ هنوز کاربری برای ارسال پیام ثبت نشده است.' });
@@ -256,7 +287,6 @@ export default {
             let successCount = 0;
             let failCount = 0;
 
-            // ارسال در دسته‌های ۲۰ تایی برای جلوگیری از تایم‌اوت
             const chunkSize = 20;
             for (let i = 0; i < results.length; i += chunkSize) {
                const batch = results.slice(i, i + chunkSize);
@@ -440,12 +470,10 @@ async function trackUser(env, user) {
   const firstName = user.first_name || '';
   const username = user.username || '';
 
-  // درج کاربر جدید اگر وجود نداشته باشد
   await env.DB.prepare(
     "INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)"
   ).bind(userId, firstName, username).run();
 
-  // به‌روزرسانی شمارنده آمار
   await env.DB.prepare("INSERT OR IGNORE INTO stats (key, value) VALUES ('total', 0)").run();
   await env.DB.prepare("UPDATE stats SET value = value + 1 WHERE key = 'total'").run();
 }
