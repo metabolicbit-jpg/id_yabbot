@@ -10,4 +10,4 @@ database_id = "{D1_DATABASE_ID}"   # شناسه دیتابیس (از داشبو�
 
 # متغیرهای غیرحساس (فقط برای وب‌هوک)
 [vars]
-WEBHOOK_SECRET = "{57248d8c154e5f30253f570dbc699b2ec2c17cce20119acbe41f54c7488e27ad}"  # یک رشته تصادفی طولانی (مثلاً 32 کاراکتر)
+WEBHOOK_SECRET = "{WEBHOOK_SECRET}"  # یک رشته تصادفی طولانی (مثلاً 32 کاراکتر)
