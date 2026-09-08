@@ -7,6 +7,8 @@ compatibility_date = "2026-08-01"
 binding = "ID_FINDER_DB"
 id = "ddf72564b43b4f3c9ab7d603d7952555"
 
-# متغیرهای غیرحساس (مانند secret وب‌هوک)
+# متغیرهای حساس (اگر در GitHub Actions به عنوان Secret تعریف شده باشند، اینجا با {} جایگزین می‌شوند)
 [vars]
-WEBHOOK_SECRET = "57248d8c154e5f30253f570dbc699b2ec2c17cce20119acbe41f54c7488e27ad
+WEBHOOK_SECRET = "{57248d8c154e5f30253f570dbc699b2ec2c17cce20119acbe41f54c7488e27ad}"
+BALE_BOT_TOKEN = "{996317935:SwTw2fk_ZUtmDyNgZdUxEBIOiBoLHA5ubNs
+}"
