@@ -1,8 +1,13 @@
 name = "idyab"
 main = "index.js"
-compatibility_date = "2024-11-01"  # تاریخ واقعی و معتبر برای Wrangler
+compatibility_date = "2026-08-01"
 
-# تنظیمات KV
-[[kv_namespaces]]
-binding = "ID_FINDER_DB"
-id = "ddf72564b43b4f3c9ab7d603d7952555"
+# اتصال به دیتابیس D1 (برای ذخیره نامحدود کاربران)
+[[d1_databases]]
+binding = "DB"                     # نام binding که در کد index.js استفاده شده
+database_name = "idyab-db"         # نام دیتابیسی که در کلودفلر می‌سازی
+database_id = "{D1_DATABASE_ID}"   # شناسه دیتابیس (از داشبورد کلودفلر کپی کن)
+
+# متغیرهای غیرحساس (فقط برای وب‌هوک)
+[vars]
+WEBHOOK_SECRET = "{57248d8c154e5f30253f570dbc699b2ec2c17cce20119acbe41f54c7488e27ad}"  # یک رشته تصادفی طولانی (مثلاً 32 کاراکتر)
