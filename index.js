@@ -277,8 +277,8 @@ export default {
 
           // --- دستور ارسال پیام دعوت با لینک مستقیم به بات ---
           if (msg.text === '/invite') {
-            // ⚠️ توجه: "YourBotUsername" را با نام کاربری واقعی ربات خود جایگزین کنید!
-            const inviteText = `📢 برای دریافت آیدی خود و استفاده از خدمات، همین حالا روی دکمه زیر بزنید:\n\n[🚀 شروع استفاده از بات](https://t.me/YourBotUsername?start=invite)`;
+            // ⚠️ توجه: "@id_yabbot" را با نام کاربری واقعی ربات خود جایگزین کنید!
+            const inviteText = `📢 برای دریافت آیدی خود و استفاده از خدمات، همین حالا روی دکمه زیر بزنید:\n\n[🚀 شروع استفاده از بات](https://ble.ir/id_yabbot?start=invite)`;
             
             await baleApi(token, 'sendMessage', {
               chat_id: chatId,
@@ -286,7 +286,7 @@ export default {
               parse_mode: 'Markdown',
               reply_markup: {
                 inline_keyboard: [
-                  [{ text: "🚀 عضویت و شروع", url: "https://t.me/YourBotUsername?start=invite" }]
+                  [{ text: "🚀 عضویت و شروع", url: "https://ble.ir/id_yabbot?start=invite" }]
                 ]
               }
             });
