@@ -4,7 +4,7 @@ const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
 const PUBLIC_LINK = "https://ble.ir/yadbegirim";
 const ADMIN_IDS = ["1381797564"];
-const WEBHOOK_SECRET = "57248d8c154e5f30253f570dbc699b2ec2c17cce20119acbe41f54c7488e27ad"; // برای امنیت تنظیم وب‌هوک
+if (url.searchParams.get('secret') === env.WEBHOOK_SECRET) {
 
 const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 
