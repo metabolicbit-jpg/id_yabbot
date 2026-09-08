@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v8.1 - D1 Migration + Broadcasting ==========
+// ========== ID Finder Bot v8.2 - Final D1 Version (No KV, No Migrate) ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -14,7 +14,7 @@ const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 🔎 فقط کافیه:
 ▫️ برای آیدی خودت روی دکمه "شروع" بزن
 ▫️ برای آیدی یک کاربر، پیامش رو به بات فوروارد (بازارسال) کن
-▫️ برای گروه، بات آیدی یاب رو به گروه اضافه کن و به محض اضافه شدن آیدی گروه رو برات میفرسته. 
+▫️ برای گروه، بات آیدی یاب رو به گروه اضافه کن و به محض اضافه شدن آیدی گروه رو برات می‌فرسته. 
 ▫️ برای کانال، ربات آیدی یاب رو اضافه کن و مدیر گروه و مجوز ارسال پیام رو روشن بزار و یک پیام بفرست تا ایدی کانال رو برات بفرسته
 
 ⚡ ساده، سریع و کاربردی!`;
@@ -39,7 +39,6 @@ export default {
       }
     }
 
-    // فقط POST مجاز است
     if (request.method !== 'POST') {
       return new Response('ID Finder Tool is running!');
     }
@@ -190,7 +189,6 @@ export default {
           if (msg.text === '/debug') {
             let report = `🛠 *گزارش دیباگ:*\n\n`;
             report += `• اتصال D1: ${env.DB ? '✅ متصل' : '❌ تعریف نشده'}\n`;
-            report += `• اتصال KV: ${env.ID_FINDER_DB ? '✅ متصل (برای مهاجرت)' : '❌ حذف شده'}\n`;
             try {
               await env.DB.prepare("INSERT OR IGNORE INTO stats (key, value) VALUES ('debug', 1)").run();
               const back = await env.DB.prepare("SELECT value FROM stats WHERE key = 'debug'").first();
@@ -202,41 +200,6 @@ export default {
             const totalUsers = results ? results.count : 0;
             report += `• تعداد کل کاربران: ${totalUsers}`;
             await baleApi(token, 'sendMessage', { chat_id: chatId, text: report, parse_mode: 'Markdown' });
-            return new Response('OK');
-          }
-
-          // --- دستور مهاجرت داده‌ها از KV به D1 ---
-          if (msg.text === '/migrate') {
-            const users = await env.ID_FINDER_DB.get('recent_users', 'json') || [];
-            const stats = await env.ID_FINDER_DB.get('stats', 'json') || { total: 0 };
-
-            if (users.length === 0) {
-              await baleApi(token, 'sendMessage', { chat_id: chatId, text: '⚠️ هیچ داده‌ای در KV پیدا نشد!' });
-              return new Response('OK');
-            }
-
-            let migrated = 0;
-            for (const u of users) {
-              const uid = typeof u === 'string' ? u : u.id;
-              const firstName = typeof u === 'string' ? '' : (u.firstName || '');
-              const username = typeof u === 'string' ? '' : (u.username || '');
-
-              await env.DB.prepare(
-                "INSERT OR IGNORE INTO users (user_id, first_name, username) VALUES (?, ?, ?)"
-              ).bind(uid, firstName, username).run();
-              migrated++;
-            }
-
-            await env.DB.prepare("INSERT OR IGNORE INTO stats (key, value) VALUES ('total', 0)").run();
-            if (stats.total > 0) {
-              await env.DB.prepare("UPDATE stats SET value = ? WHERE key = 'total'").bind(stats.total).run();
-            }
-
-            await baleApi(token, 'sendMessage', {
-              chat_id: chatId,
-              text: `✅ *مهاجرت با موفقیت انجام شد!*\n\n📦 داده‌های منتقل شده: ${migrated} کاربر\n👥 آمار کل: ${stats.total} کاربر`,
-              parse_mode: 'Markdown'
-            });
             return new Response('OK');
           }
           
@@ -463,7 +426,7 @@ async function getBotId(token) {
   return res && res.result ? res.result.id : null;
 }
 
-// تابع ثبت کاربر با D1 (جایگزین نسخه KV)
+// تابع ثبت کاربر با D1
 async function trackUser(env, user) {
   if (!user) return;
   const userId = user.id.toString();
