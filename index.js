@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v8.3 - Final D1 Version with Invite & Auto-Track ==========
+// ========== ID Finder Bot v9.0 - Ultimate Version with Smart ID Card ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -86,6 +86,55 @@ export default {
               callback_query_id: cb.id, text: 'لطفاً ابتدا عضو شوید.', show_alert: true
             });
           }
+        } else if (data === 'new_card') {
+          // ✅ ساخت کارت جدید با تحلیل آیدی
+          const userIdStr = userId.toString();
+          const digits = userIdStr.split('').map(Number);
+          const sum = digits.reduce((a, b) => a + b, 0);
+          const length = userIdStr.length;
+          const isEven = sum % 2 === 0;
+          
+          let personality = "";
+          let luckyScore = Math.floor(Math.random() * 100) + 1;
+          
+          if (isEven) {
+            personality = "شما یک استراتژیست آرام و متعادل هستید! همیشه قبل از تصمیم‌گیری، ۱۰ بار فکر می‌کنید.";
+          } else {
+            personality = "شما یک ماجراجوی خلاق هستید! عاشق امتحان کردن چیزهای جدید و ریسک‌های حساب‌شده هستید.";
+          }
+          
+          if (length <= 7) {
+            personality += "\n👑 قدمت شما نشان می‌دهد که از کاربران قدیمی و وفادار بله هستید!";
+          } else {
+            personality += "\n🌱 قدمت شما نشان می‌دهد که از کاربران جدید و خوش‌آتیه بله هستید!";
+          }
+          
+          // انتخاب تصادفی یک نقل‌قول از D1
+          const quote = await env.DB.prepare(
+            "SELECT text, author FROM quotes ORDER BY RANDOM() LIMIT 1"
+          ).first();
+          
+          let replyText = `🌟 کارت اختصاصی آیدی شما 🌟\n\n`;
+          replyText += `🆔 آیدی عددی: \`${userIdStr}\`\n`;
+          replyText += `🔢 مجموع ارقام: ${sum}\n\n`;
+          replyText += `🎭 تحلیل شخصیت شما:\n${personality}\n\n`;
+          replyText += `🍀 شانس امروز شما: ${luckyScore}/100\n\n`;
+          
+          if (quote) {
+            replyText += `📚 درس حکمت امروز:\n«${quote.text}»\n(${quote.author})\n\n`;
+          }
+          
+          replyText += `📢 برای یادگیری بیشتر، به کانال ما سر بزنید: @yadbegirim`;
+          
+          await editMessage(token, chatId, cb.message.message_id, replyText, {
+            inline_keyboard: [
+              [
+                { text: "📋 کپی کارت", copy_text: { text: replyText } },
+                { text: "🔄 کارت جدید", callback_data: "new_card" }
+              ],
+              [{ text: "📢 کانال یادبگیریم", url: PUBLIC_LINK }]
+            ]
+          });
         }
         return new Response('OK');
       }
@@ -277,7 +326,7 @@ export default {
 
           // --- دستور ارسال پیام دعوت با لینک مستقیم به بات ---
           if (msg.text === '/invite') {
-            // ⚠️ توجه: "@id_yabbot" را با نام کاربری واقعی ربات خود جایگزین کنید!
+            // ⚠️ توجه: "id_yabbot" را با نام کاربری واقعی ربات خود جایگزین کنید!
             const inviteText = `📢 برای دریافت آیدی خود و استفاده از خدمات، همین حالا روی دکمه زیر بزنید:\n\n[🚀 شروع استفاده از بات](https://ble.ir/id_yabbot?start=invite)`;
             
             await baleApi(token, 'sendMessage', {
@@ -378,8 +427,69 @@ export default {
         return new Response('OK');
       }
 
-      // ۳) گروه‌ها (اگر پیامی با دستور /id باشد)
+      // ۳) گروه‌ها (دستورات مخصوص مدیران گروه)
       if (msg.chat.type === 'supergroup' || msg.chat.type === 'group') {
+        
+        // --- دستور دریافت لیست ادمین‌های گروه ---
+        if (msg.text === '/admins') {
+          const adminsRes = await baleApi(token, 'getChatAdministrators', { chat_id: chatId });
+          if (adminsRes && adminsRes.ok) {
+            let list = "👑 *لیست ادمین‌های این گروه:*\n\n";
+            adminsRes.result.forEach((admin, idx) => {
+              const name = admin.user.first_name || '—';
+              const username = admin.user.username ? '@' + admin.user.username : '(ندارد)';
+              const status = admin.status === 'creator' ? '👑 مالک' : '🛡 ادمین';
+              list += `${idx + 1}. ${name} (${username})\n🆔 \`${admin.user.id}\` - ${status}\n\n`;
+            });
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: list,
+              parse_mode: 'Markdown',
+              reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی‌ها", copy_text: { text: adminsRes.result.map(a => a.user.id).join('\n') } }]] }
+            });
+          } else {
+            await baleApi(token, 'sendMessage', { chat_id: chatId, text: '❌ برای دریافت لیست ادمین‌ها، ربات باید ادمین گروه باشد!' });
+          }
+          return new Response('OK');
+        }
+
+        // --- دستور دریافت لیست اعضای فعال (ذخیره شده در D1) ---
+        if (msg.text === '/members' || msg.text === '/اعضا') {
+          // اطمینان از اینکه کاربر ادمین گروه است (اختیاری - می‌توانید این خط را حذف کنید تا همه ببینند)
+          const userStatus = await baleApi(token, 'getChatMember', { chat_id: chatId, user_id: userId });
+          if (!(userStatus && userStatus.ok && ['administrator', 'creator'].includes(userStatus.result.status))) {
+            await baleApi(token, 'sendMessage', { chat_id: chatId, text: '⚠️ فقط ادمین گروه به این لیست دسترسی دارد.' });
+            return new Response('OK');
+          }
+
+          // دریافت لیست اعضا از دیتابیس D1 (کسانی که تاکنون با بات تعامل داشته‌اند)
+          const { results } = await env.DB.prepare("SELECT user_id, first_name, username FROM users ORDER BY created_at DESC LIMIT 50").all();
+          
+          if (results.length === 0) {
+            await baleApi(token, 'sendMessage', { chat_id: chatId, text: '📭 هنوز عضوی در این گروه با بات تعامل نکرده است.' });
+            return new Response('OK');
+          }
+
+          let list = "📋 *لیست اعضای فعال گروه:*\n\n";
+          const copyIds = [];
+          results.forEach((u, idx) => {
+            const uid = u.user_id;
+            const uName = u.first_name || '—';
+            const uUser = u.username ? '@' + u.username : '(ندارد)';
+            list += `${idx + 1}. ${uName} (${uUser})\n🆔 \`${uid}\`\n\n`;
+            copyIds.push(uid);
+          });
+
+          await baleApi(token, 'sendMessage', {
+            chat_id: chatId,
+            text: list + `\n*(این لیست از اعضایی است که با بات تعامل کرده‌اند)*`,
+            parse_mode: 'Markdown',
+            reply_markup: { inline_keyboard: [[{ text: "📋 کپی همه آیدی‌ها", copy_text: { text: copyIds.join('\n') } }]] }
+          });
+          return new Response('OK');
+        }
+
+        // --- دستور قبلی /id ---
         if (msg.text === '/id' || msg.text === '/ID' || msg.text === '/آیدی') {
           const id = msg.chat.id.toString();
           const title = msg.chat.title || 'Unknown';
@@ -391,6 +501,65 @@ export default {
             reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی", copy_text: { text: id } }]] }
           });
         }
+        return new Response('OK');
+      }
+
+      // ۴) بخش ساخت کارت آیدی هوشمند (mycard)
+      if (msg.text === '/mycard' || msg.text === "🎴 کارت من") {
+        const userIdStr = userId.toString();
+        
+        // تحلیل آیدی
+        const digits = userIdStr.split('').map(Number);
+        const sum = digits.reduce((a, b) => a + b, 0);
+        const length = userIdStr.length;
+        const isEven = sum % 2 === 0;
+        
+        let personality = "";
+        let luckyScore = Math.floor(Math.random() * 100) + 1;
+        
+        if (isEven) {
+          personality = "شما یک استراتژیست آرام و متعادل هستید! همیشه قبل از تصمیم‌گیری، ۱۰ بار فکر می‌کنید.";
+        } else {
+          personality = "شما یک ماجراجوی خلاق هستید! عاشق امتحان کردن چیزهای جدید و ریسک‌های حساب‌شده هستید.";
+        }
+        
+        if (length <= 7) {
+          personality += "\n👑 قدمت شما نشان می‌دهد که از کاربران قدیمی و وفادار بله هستید!";
+        } else {
+          personality += "\n🌱 قدمت شما نشان می‌دهد که از کاربران جدید و خوش‌آتیه بله هستید!";
+        }
+        
+        // انتخاب تصادفی یک نقل‌قول از D1
+        const quote = await env.DB.prepare(
+          "SELECT text, author FROM quotes ORDER BY RANDOM() LIMIT 1"
+        ).first();
+        
+        let replyText = `🌟 کارت اختصاصی آیدی شما 🌟\n\n`;
+        replyText += `🆔 آیدی عددی: \`${userIdStr}\`\n`;
+        replyText += `🔢 مجموع ارقام: ${sum}\n\n`;
+        replyText += `🎭 تحلیل شخصیت شما:\n${personality}\n\n`;
+        replyText += `🍀 شانس امروز شما: ${luckyScore}/100\n\n`;
+        
+        if (quote) {
+          replyText += `📚 درس حکمت امروز:\n«${quote.text}»\n(${quote.author})\n\n`;
+        }
+        
+        replyText += `📢 برای یادگیری بیشتر، به کانال ما سر بزنید: @yadbegirim`;
+        
+        await baleApi(token, 'sendMessage', {
+          chat_id: chatId,
+          text: replyText,
+          parse_mode: 'Markdown',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "📋 کپی کارت", copy_text: { text: replyText } },
+                { text: "🔄 کارت جدید", callback_data: "new_card" }
+              ],
+              [{ text: "📢 کانال یادبگیریم", url: PUBLIC_LINK }]
+            ]
+          }
+        });
         return new Response('OK');
       }
 
