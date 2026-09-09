@@ -61,8 +61,11 @@ export default {
         const token = env.BALE_BOT_TOKEN;
         if (!token) return new Response('Missing token', { status: 500 });
         
-        const webhookUrl = `https://${url.hostname}/webhook`;
-        const res = await baleApi(token, 'setWebhook', { url: webhookUrl });
+const webhookUrl = `https://${url.hostname}/webhook`;
+const res = await baleApi(token, 'setWebhook', { 
+    url: webhookUrl, 
+    allowed_updates: ["message", "callback_query", "my_chat_member", "channel_post"] 
+});
         if (res) {
           return new Response(JSON.stringify({ ok: res.ok, description: res.description }), {
             headers: { 'Content-Type': 'application/json' }
