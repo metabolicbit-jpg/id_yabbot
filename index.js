@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v9.4 - Fixed Debug Count ==========
+// ========== ID Finder Bot v9.5 - Ultimate Edition with Rate Limiting & Group Report ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -19,23 +19,31 @@ const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 
 ⚡ ساده، سریع و کاربردی!`;
 
-const SERVICES_GUIDE = `📚 *راهنمای کامل خدمات بات آیدی‌یاب* 📚
+// متن‌های راهنما برای هر بخش (کوتاه و کاربردی)
+const GUIDE_MAIN = `📚 *راهنمای بات آیدی‌یاب* 📚
+برای مشاهده توضیحات هر بخش، روی دکمه‌های زیر بزنید:
 
-🔎 *خدمات عمومی (برای همه کاربران):*
+🔎 خدمات عمومی
+🛠 خدمات ادمین گروه
+⚙️ دستورات ادمین بات`;
+
+const GUIDE_PUBLIC = `🔎 *خدمات عمومی (برای همه کاربران):*
 
 🆔 *آیدی من* - با زدن دکمه «🚀 شروع»، آیدی عددی خودتان را دریافت کنید.
 👤 *آیدی دیگران* - پیام یک کاربر را به بات فوروارد کنید تا آیدی او را دریافت کنید.
 🎴 *کارت آیدی* - با زدن دکمه «🎴 کارت من»، یک کارت اختصاصی با تحلیل آیدی، طالع‌بینی و درس حکمت دریافت کنید.
 
-🛠 *خدمات ادمین گروه (ویژه مدیران):*
+💡 *نکته:* کاربران قدیمی برای مشاهده دکمه‌های جدید، یک‌بار /start را بزنید تا بات تاریخچه را پاک کند.`;
+
+const GUIDE_GROUP = `🛠 *خدمات ادمین گروه (ویژه مدیران):*
 
 👑 *لیست ادمین‌ها* - در گروه، دستور /admins را بزنید تا لیست آیدی ادمین‌های گروه را دریافت کنید.
 📋 *لیست اعضا* - در گروه، دستور /members یا /اعضا را بزنید تا لیست اعضای فعالی که با بات تعامل داشته‌اند را دریافت کنید.
 🆔 *آیدی گروه* - در گروه، دستور /id یا /آیدی را بزنید تا آیدی گروه را دریافت کنید.
 
-💡 *نکته:* برای استفاده از خدمات ادمین گروه، ربات را به گروه خود اضافه کنید و به آن دسترسی ادمین بدهید!`;
+💡 *نکته:* برای استفاده از این خدمات، ربات را به گروه خود اضافه کنید و به آن دسترسی ادمین بدهید!`;
 
-const ADMIN_GUIDE = `⚙️ *راهنمای دستورات ادمین بات* ⚙️
+const GUIDE_ADMIN = `⚙️ *دستورات ادمین بات (فقط برای ادمین کل):*
 
 📊 /stats - آمار کل کاربران بات
 👥 /users - نمایش ۱۰ کاربر اخیر
@@ -43,6 +51,7 @@ const ADMIN_GUIDE = `⚙️ *راهنمای دستورات ادمین بات* �
 📨 /sendto - ارسال پیام تکی به یک کاربر خاص
 📢 /broadcast - ارسال پیام دسته‌ای به همه کاربران
 📨 /invite - ساخت لینک دعوت با دکمه
+📋 /grouplist - لیست گروه‌ها و کانال‌هایی که بات در آن‌ها اضافه شده است
 
 🔒 *این دستورات فقط برای ادمین بات قابل مشاهده و اجرا هستند.*`;
 
@@ -85,7 +94,34 @@ export default {
 
         await baleApi(token, 'answerCallbackQuery', { callback_query_id: cb.id });
 
+        // محدودیت استفاده از Callback ها (ضد اسپم)
+        const canUse = await checkRateLimit(env, userId, 'callback', 10, 60); // 10 بار در دقیقه
+        if (!canUse) {
+          await baleApi(token, 'answerCallbackQuery', {
+            callback_query_id: cb.id, text: '⏳ لطفاً کمی صبر کنید و دوباره تلاش کنید.', show_alert: true
+          });
+          return new Response('OK');
+        }
+
         const isMember = await checkStrictMembership(token, userId);
+
+        // --- دکمه‌های راهنما ---
+        if (data === 'guide_main') {
+          await editMessage(token, chatId, cb.message.message_id, GUIDE_MAIN, getGuideKeyboard());
+          return new Response('OK');
+        }
+        if (data === 'guide_public') {
+          await editMessage(token, chatId, cb.message.message_id, GUIDE_PUBLIC, getBackToGuideKeyboard());
+          return new Response('OK');
+        }
+        if (data === 'guide_group') {
+          await editMessage(token, chatId, cb.message.message_id, GUIDE_GROUP, getBackToGuideKeyboard());
+          return new Response('OK');
+        }
+        if (data === 'guide_admin') {
+          await editMessage(token, chatId, cb.message.message_id, GUIDE_ADMIN, getBackToGuideKeyboard());
+          return new Response('OK');
+        }
 
         if (data === 'check_membership_inline') {
           if (isMember) {
@@ -123,12 +159,17 @@ export default {
 
         if (chatType === 'group' || chatType === 'supergroup') {
           if (newStatus === 'member' || newStatus === 'administrator') {
+            // ذخیره اطلاعات گروه در D1
+            await env.DB.prepare(
+              "INSERT OR REPLACE INTO bot_groups (chat_id, chat_title, chat_username) VALUES (?, ?, ?)"
+            ).bind(chat.id.toString(), chat.title || 'Unknown', chat.username || '').run();
+
             const id = chat.id.toString();
             const title = chat.title || 'Unknown';
             const username = chat.username ? '@' + chat.username : '(بدون یوزر)';
             await baleApi(token, 'sendMessage', {
               chat_id: id,
-              text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}\n🔗 آیدی: ${username}`,
+              text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}\n🔗 آیدی: ${username}\n\n📚 برای دریافت خدمات ادمین، دستورات /admins و /members را بزنید!`,
               parse_mode: 'Markdown',
               reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی", copy_text: { text: id } }]] }
             });
@@ -170,6 +211,16 @@ export default {
         // ثبت خودکار کاربر در D1 (فقط غیر ادمین)
         if (!ADMIN_IDS.includes(userId.toString())) {
           await trackUser(env, msg.from);
+        }
+
+        // محدودیت عمومی برای پیام‌ها (ضد اسپم)
+        const canSendMessage = await checkRateLimit(env, userId, 'message', 20, 60); // 20 پیام در دقیقه
+        if (!canSendMessage) {
+          await baleApi(token, 'sendMessage', {
+            chat_id: chatId,
+            text: '⏳ لطفاً سرعت ارسال پیام را کم کنید و دوباره تلاش کنید.'
+          });
+          return new Response('OK');
         }
 
         // --- دستورات ادمین ---
@@ -224,15 +275,18 @@ export default {
               report += `• ❌ خطای D1: ${e.message}\n`;
             }
             
-            // ✅ اصلاح: خواندن هم تعداد ردیف‌های جدول users و هم مقدار stats.total
+            // خواندن هم تعداد ردیف‌های جدول users و هم مقدار stats.total
             const userCount = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
             const statTotal = await env.DB.prepare("SELECT value FROM stats WHERE key = 'total'").first();
+            const groupCount = await env.DB.prepare("SELECT COUNT(*) as count FROM bot_groups").first();
             
             const usersCount = userCount ? userCount.count : 0;
             const totalStats = statTotal ? statTotal.value : 0;
+            const groupsCount = groupCount ? groupCount.count : 0;
             
             report += `• تعداد ردیف‌های جدول کاربران: ${usersCount}\n`;
             report += `• مقدار کل ذخیره شده در stats: ${totalStats}\n`;
+            report += `• تعداد گروه‌هایی که بات در آن‌ها اضافه شده: ${groupsCount}\n`;
             report += `• وضعیت: ${usersCount === totalStats ? '✅ سازگار' : '⚠️ ناسازگار (نیاز به بررسی)'}`;
             
             await baleApi(token, 'sendMessage', { chat_id: chatId, text: report, parse_mode: 'Markdown' });
@@ -324,6 +378,34 @@ export default {
             });
             return new Response('OK');
           }
+
+          // --- دستور گزارش گروه‌ها و کانال‌ها ---
+          if (msg.text === '/grouplist') {
+            const { results } = await env.DB.prepare(
+              "SELECT chat_id, chat_title, chat_username, added_at FROM bot_groups ORDER BY added_at DESC"
+            ).all();
+            
+            if (results.length === 0) {
+              await baleApi(token, 'sendMessage', { chat_id: chatId, text: '📭 هنوز بات به هیچ گروه یا کانالی اضافه نشده است.' });
+              return new Response('OK');
+            }
+            
+            let list = "📋 *لیست گروه‌ها و کانال‌هایی که بات در آن‌ها اضافه شده:*\n\n";
+            results.forEach((g, idx) => {
+              const gTitle = g.chat_title || 'بدون نام';
+              const gUser = g.chat_username ? '@' + g.chat_username : '(خصوصی)';
+              const gDate = new Date(g.added_at).toLocaleDateString('fa-IR');
+              list += `${idx + 1}. ${gTitle}\n   🔗 ${gUser}\n   🆔 \`${g.chat_id}\`\n   📅 ${gDate}\n\n`;
+            });
+            
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: list,
+              parse_mode: 'Markdown',
+              reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی‌ها", copy_text: { text: results.map(g => g.chat_id).join('\n') } }]] }
+            });
+            return new Response('OK');
+          }
         }
 
         // الف) /start
@@ -360,33 +442,56 @@ export default {
 
         // ج) دکمه «🎴 کارت من»
         if (msg.text === "🎴 کارت من") {
-          const cardText = await generateCard(env, userId);
-          await baleApi(token, 'sendMessage', {
-            chat_id: chatId,
-            text: cardText,
-            parse_mode: 'Markdown',
-            reply_markup: getCardInlineKeyboard()
-          });
+          const today = new Date().toISOString().split('T')[0];
+          const cardStatus = await env.DB.prepare(
+            "SELECT card_text, card_date, usage_count FROM user_card_status WHERE user_id = ?"
+          ).bind(userId.toString()).first();
+
+          if (cardStatus && cardStatus.card_date === today) {
+            // اگر کاربر امروز کارت را دیده، همان کارت را نشان بده
+            if (cardStatus.usage_count >= 3) {
+              await baleApi(token, 'sendMessage', {
+                chat_id: chatId,
+                text: `⏳ شما قبلاً کارت امروز خود را مشاهده کرده‌اید.\n\nبرای مشاهده دوباره، فردا مراجعه کنید. 🌙`
+              });
+            } else {
+              // نمایش همان کارت قبلی
+              await baleApi(token, 'sendMessage', {
+                chat_id: chatId,
+                text: cardStatus.card_text,
+                parse_mode: 'Markdown',
+                reply_markup: getCardInlineKeyboard()
+              });
+              // افزایش تعداد استفاده
+              await env.DB.prepare(
+                "UPDATE user_card_status SET usage_count = usage_count + 1 WHERE user_id = ?"
+              ).bind(userId.toString()).run();
+            }
+          } else {
+            // اگر کاربر امروز کارت را ندیده، کارت جدید بساز
+            const cardText = await generateCard(env, userId);
+            await env.DB.prepare(
+              "INSERT OR REPLACE INTO user_card_status (user_id, card_text, card_date, usage_count) VALUES (?, ?, ?, 1)"
+            ).bind(userId.toString(), cardText, today).run();
+
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: cardText,
+              parse_mode: 'Markdown',
+              reply_markup: getCardInlineKeyboard()
+            });
+          }
           return new Response('OK');
         }
 
         // د) دکمه «📚 راهنما»
         if (msg.text === "📚 راهنما") {
-          if (ADMIN_IDS.includes(userId.toString())) {
-            await baleApi(token, 'sendMessage', {
-              chat_id: chatId,
-              text: SERVICES_GUIDE + "\n\n" + ADMIN_GUIDE,
-              parse_mode: 'Markdown',
-              reply_markup: getReplyKeyboard()
-            });
-          } else {
-            await baleApi(token, 'sendMessage', {
-              chat_id: chatId,
-              text: SERVICES_GUIDE,
-              parse_mode: 'Markdown',
-              reply_markup: getReplyKeyboard()
-            });
-          }
+          await baleApi(token, 'sendMessage', {
+            chat_id: chatId,
+            text: GUIDE_MAIN,
+            parse_mode: 'Markdown',
+            reply_markup: getGuideKeyboard()
+          });
           return new Response('OK');
         }
 
@@ -445,6 +550,13 @@ export default {
       // ۳) گروه‌ها (دستورات مخصوص مدیران گروه)
       if (msg.chat.type === 'supergroup' || msg.chat.type === 'group') {
         
+        // --- محدودیت استفاده در گروه ---
+        const canUseGroup = await checkRateLimit(env, userId, 'group_command', 5, 60); // 5 دستور در دقیقه
+        if (!canUseGroup) {
+          await baleApi(token, 'sendMessage', { chat_id: chatId, text: '⏳ لطفاً سرعت ارسال دستورات را کم کنید.' });
+          return new Response('OK');
+        }
+
         // --- دستور دریافت لیست ادمین‌های گروه ---
         if (msg.text === '/admins') {
           const adminsRes = await baleApi(token, 'getChatAdministrators', { chat_id: chatId });
@@ -526,6 +638,43 @@ export default {
 
 // --- توابع کمکی ---
 
+// تابع محدودیت نرخ (Rate Limiting)
+async function checkRateLimit(env, userId, action, maxCount, timeWindowSeconds) {
+  const now = Date.now();
+  const windowStart = now - (timeWindowSeconds * 1000);
+  
+  const record = await env.DB.prepare(
+    "SELECT usage_count, last_used FROM user_activity WHERE user_id = ? AND action = ?"
+  ).bind(userId.toString(), action).first();
+  
+  if (!record) {
+    await env.DB.prepare(
+      "INSERT INTO user_activity (user_id, action, last_used, usage_count) VALUES (?, ?, ?, 1)"
+    ).bind(userId.toString(), action, now).run();
+    return true;
+  }
+  
+  const lastUsed = record.last_used;
+  const usageCount = record.usage_count;
+  
+  if (lastUsed < windowStart) {
+    // پنجره زمانی جدید
+    await env.DB.prepare(
+      "UPDATE user_activity SET last_used = ?, usage_count = 1 WHERE user_id = ? AND action = ?"
+    ).bind(now, userId.toString(), action).run();
+    return true;
+  }
+  
+  if (usageCount >= maxCount) {
+    return false;
+  }
+  
+  await env.DB.prepare(
+    "UPDATE user_activity SET usage_count = usage_count + 1 WHERE user_id = ? AND action = ?"
+  ).bind(userId.toString(), action).run();
+  return true;
+}
+
 // تابع تولید کارت آیدی هوشمند با طالع‌بینی
 async function generateCard(env, userId) {
   const userIdStr = userId.toString();
@@ -599,6 +748,27 @@ async function generateCard(env, userId) {
   replyText += `📢 برای یادگیری بیشتر، به کانال ما سر بزنید: @yadbegirim`;
   
   return replyText;
+}
+
+// کیبورد راهنما (دکمه‌های اینلاین)
+function getGuideKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: "🔎 خدمات عمومی", callback_data: "guide_public" }],
+      [{ text: "🛠 خدمات ادمین گروه", callback_data: "guide_group" }],
+      [{ text: "⚙️ دستورات ادمین بات", callback_data: "guide_admin" }],
+      [{ text: "📚 بازگشت به منو", callback_data: "guide_main" }]
+    ]
+  };
+}
+
+// کیبورد بازگشت به راهنما
+function getBackToGuideKeyboard() {
+  return {
+    inline_keyboard: [
+      [{ text: "📚 بازگشت به راهنما", callback_data: "guide_main" }]
+    ]
+  };
 }
 
 // کیبورد مخصوص کارت آیدی
