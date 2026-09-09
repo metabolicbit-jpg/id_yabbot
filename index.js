@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v9.2 - Final Version with Horoscope & No Refresh ==========
+// ========== ID Finder Bot v9.3 - Final Version with Guide Button ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -19,9 +19,34 @@ const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 
 ⚡ ساده، سریع و کاربردی!`;
 
+// راهنمای کامل خدمات بات
+const SERVICES_GUIDE = `📚 *راهنمای کامل خدمات بات آیدی‌یاب* 📚
+
+🔎 *خدمات عمومی (برای همه کاربران):*
+
+🆔 *آیدی من* - با زدن دکمه «🚀 شروع»، آیدی عددی خودتان را دریافت کنید.
+👤 *آیدی دیگران* - پیام یک کاربر را به بات فوروارد کنید تا آیدی او را دریافت کنید.
+🎴 *کارت آیدی* - با زدن دکمه «🎴 کارت من»، یک کارت اختصاصی با تحلیل آیدی، طالع‌بینی و درس حکمت دریافت کنید.
+
+🛠 *خدمات ادمین گروه (ویژه مدیران):*
+
+👑 *لیست ادمین‌ها* - در گروه، دستور /admins را بزنید تا لیست آیدی ادمین‌های گروه را دریافت کنید.
+📋 *لیست اعضا* - در گروه، دستور /members یا /اعضا را بزنید تا لیست اعضای فعالی که با بات تعامل داشته‌اند را دریافت کنید.
+🆔 *آیدی گروه* - در گروه، دستور /id یا /آیدی را بزنید تا آیدی گروه را دریافت کنید.
+
+⚙️ *دستورات ادمین بات (فقط برای شما):*
+
+📊 /stats - آمار کل کاربران بات
+👥 /users - نمایش ۱۰ کاربر اخیر
+🛠 /debug - بررسی سلامت دیتابیس و بات
+📨 /sendto - ارسال پیام تکی به یک کاربر خاص
+📢 /broadcast - ارسال پیام دسته‌ای به همه کاربران
+📨 /invite - ساخت لینک دعوت با دکمه
+
+💡 *نکته:* برای استفاده از خدمات ادمین گروه، ربات را به گروه خود اضافه کنید و به آن دسترسی ادمین بدهید!`;
+
 export default {
   async fetch(request, env) {
-    // تنظیم وب‌هوک (اختیاری)
     if (request.method === 'POST') {
       const url = new URL(request.url);
       if (url.pathname === '/webhook' && url.searchParams.get('secret') === env.WEBHOOK_SECRET) {
@@ -335,7 +360,18 @@ export default {
           return new Response('OK');
         }
 
-        // د) پیام فوروارد شده
+        // د) دکمه «📚 راهنما»
+        if (msg.text === "📚 راهنما") {
+          await baleApi(token, 'sendMessage', {
+            chat_id: chatId,
+            text: SERVICES_GUIDE,
+            parse_mode: 'Markdown',
+            reply_markup: getReplyKeyboard()
+          });
+          return new Response('OK');
+        }
+
+        // هـ) پیام فوروارد شده
         if (msg.forward_from || msg.forward_from_chat) {
           const isMember = await checkStrictMembership(token, userId);
 
@@ -378,10 +414,10 @@ export default {
           return new Response('OK');
         }
 
-        // هـ) پیام‌های دیگر در چت خصوصی (راهنما)
+        // و) پیام‌های دیگر در چت خصوصی (راهنما)
         await baleApi(token, 'sendMessage', {
           chat_id: chatId,
-          text: `❓ برای دریافت آیدی خود روی دکبه «🚀 شروع» بزنید یا پیام کاربر دیگری را فوروارد کنید.\n\n${GUIDE_MESSAGE}`,
+          text: `❓ برای دریافت آیدی خود روی دکمه «🚀 شروع» بزنید یا پیام کاربر دیگری را فوروارد کنید.\n\n${GUIDE_MESSAGE}`,
           reply_markup: getReplyKeyboard()
         });
         return new Response('OK');
@@ -471,7 +507,7 @@ export default {
 
 // --- توابع کمکی ---
 
-// تابع تولید کارت آیدی هوشمند با طالع‌بینی
+// تابع تولید کارت آیدی هوشمند با طالع‌بینی (اصلاح شده با کوئری quote)
 async function generateCard(env, userId) {
   const userIdStr = userId.toString();
   
@@ -527,6 +563,11 @@ async function generateCard(env, userId) {
   ];
   funnySentence = funnyMessages[lastDigit % 10];
   
+  // انتخاب تصادفی یک نقل‌قول از D1
+  const quote = await env.DB.prepare(
+    "SELECT text, author FROM quotes ORDER BY RANDOM() LIMIT 1"
+  ).first();
+  
   let replyText = `🌟 کارت اختصاصی آیدی شما 🌟\n\n`;
   replyText += `🆔 آیدی عددی: \`${userIdStr}\`\n`;
   replyText += `🔢 مجموع ارقام: ${sum}\n\n`;
@@ -552,7 +593,6 @@ function getCardInlineKeyboard() {
     inline_keyboard: [
       [
         { text: "📋 کپی کارت", copy_text: { text: "🌟 کارت آیدی هوشمند" } },
-        { text: "📤 اشتراک‌گذاری", switch_inline_query: "کارت آیدی من" }
       ],
       [{ text: "📢 کانال یادبگیریم", url: PUBLIC_LINK }]
     ]
@@ -621,7 +661,8 @@ async function trackUser(env, user) {
 function getReplyKeyboard() {
   return {
     keyboard: [
-      [{ text: "🚀 شروع" }, { text: "🎴 کارت من" }]
+      [{ text: "🚀 شروع" }, { text: "🎴 کارت من" }],
+      [{ text: "📚 راهنما" }]
     ],
     resize_keyboard: true,
     is_persistent: true
