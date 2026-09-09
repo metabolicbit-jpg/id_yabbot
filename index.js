@@ -589,7 +589,7 @@ async function generateCard(env, userId) {
   replyText += `🔮 طالع‌بینی ارقام شما:\n`;
   replyText += `🪐 سیاره حاکم: ${planet}\n`;
   replyText += `♈ برج فلکی: ${zodiac}\n`;
-  replyText += `💬 جمله طنز: "${funnySentence}"\n\n`;
+  replyText += `💬 جمله جالب: "${funnySentence}"\n\n`;
   replyText += `🍀 شانس امروز شما: ${luckyScore}/100\n\n`;
   
   if (quote) {
