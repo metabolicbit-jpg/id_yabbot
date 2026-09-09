@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v9.3 - Final Version with Guide Button ==========
+// ========== ID Finder Bot v9.4 - Fixed Debug Count ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -19,7 +19,6 @@ const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 
 ⚡ ساده، سریع و کاربردی!`;
 
-// راهنمای کامل خدمات بات
 const SERVICES_GUIDE = `📚 *راهنمای کامل خدمات بات آیدی‌یاب* 📚
 
 🔎 *خدمات عمومی (برای همه کاربران):*
@@ -35,6 +34,17 @@ const SERVICES_GUIDE = `📚 *راهنمای کامل خدمات بات آیدی
 🆔 *آیدی گروه* - در گروه، دستور /id یا /آیدی را بزنید تا آیدی گروه را دریافت کنید.
 
 💡 *نکته:* برای استفاده از خدمات ادمین گروه، ربات را به گروه خود اضافه کنید و به آن دسترسی ادمین بدهید!`;
+
+const ADMIN_GUIDE = `⚙️ *راهنمای دستورات ادمین بات* ⚙️
+
+📊 /stats - آمار کل کاربران بات
+👥 /users - نمایش ۱۰ کاربر اخیر
+🛠 /debug - بررسی سلامت دیتابیس و بات
+📨 /sendto - ارسال پیام تکی به یک کاربر خاص
+📢 /broadcast - ارسال پیام دسته‌ای به همه کاربران
+📨 /invite - ساخت لینک دعوت با دکمه
+
+🔒 *این دستورات فقط برای ادمین بات قابل مشاهده و اجرا هستند.*`;
 
 export default {
   async fetch(request, env) {
@@ -213,9 +223,18 @@ export default {
             } catch (e) {
               report += `• ❌ خطای D1: ${e.message}\n`;
             }
-            const { results } = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
-            const totalUsers = results ? results.count : 0;
-            report += `• تعداد کل کاربران: ${totalUsers}`;
+            
+            // ✅ اصلاح: خواندن هم تعداد ردیف‌های جدول users و هم مقدار stats.total
+            const userCount = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
+            const statTotal = await env.DB.prepare("SELECT value FROM stats WHERE key = 'total'").first();
+            
+            const usersCount = userCount ? userCount.count : 0;
+            const totalStats = statTotal ? statTotal.value : 0;
+            
+            report += `• تعداد ردیف‌های جدول کاربران: ${usersCount}\n`;
+            report += `• مقدار کل ذخیره شده در stats: ${totalStats}\n`;
+            report += `• وضعیت: ${usersCount === totalStats ? '✅ سازگار' : '⚠️ ناسازگار (نیاز به بررسی)'}`;
+            
             await baleApi(token, 'sendMessage', { chat_id: chatId, text: report, parse_mode: 'Markdown' });
             return new Response('OK');
           }
@@ -353,12 +372,21 @@ export default {
 
         // د) دکمه «📚 راهنما»
         if (msg.text === "📚 راهنما") {
-          await baleApi(token, 'sendMessage', {
-            chat_id: chatId,
-            text: SERVICES_GUIDE,
-            parse_mode: 'Markdown',
-            reply_markup: getReplyKeyboard()
-          });
+          if (ADMIN_IDS.includes(userId.toString())) {
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: SERVICES_GUIDE + "\n\n" + ADMIN_GUIDE,
+              parse_mode: 'Markdown',
+              reply_markup: getReplyKeyboard()
+            });
+          } else {
+            await baleApi(token, 'sendMessage', {
+              chat_id: chatId,
+              text: SERVICES_GUIDE,
+              parse_mode: 'Markdown',
+              reply_markup: getReplyKeyboard()
+            });
+          }
           return new Response('OK');
         }
 
@@ -498,11 +526,10 @@ export default {
 
 // --- توابع کمکی ---
 
-// تابع تولید کارت آیدی هوشمند با طالع‌بینی (اصلاح شده با کوئری quote)
+// تابع تولید کارت آیدی هوشمند با طالع‌بینی
 async function generateCard(env, userId) {
   const userIdStr = userId.toString();
   
-  // تحلیل آیدی
   const digits = userIdStr.split('').map(Number);
   const sum = digits.reduce((a, b) => a + b, 0);
   const length = userIdStr.length;
@@ -528,17 +555,14 @@ async function generateCard(env, userId) {
   let zodiac = "";
   let funnySentence = "";
   
-  // سیاره حاکم بر اساس جمع ارقام (1-9)
   const planetIndex = (sum % 9) + 1;
   const planets = ["خورشید", "ماه", "مشتری", "زهره", "مریخ", "عطارد", "زحل", "اورانوس", "نپتون"];
   planet = planets[planetIndex - 1];
   
-  // برج فلکی بر اساس رقم اول آیدی (0-9)
   const firstDigit = digits[0] || 0;
   const zodiacs = ["حمل", "ثور", "جوزا", "سرطان", "اسد", "سنبله", "میزان", "عقرب", "قوس", "جدی"];
   zodiac = zodiacs[firstDigit % 10];
   
-  // جمله طنز بر اساس رقم آخر آیدی (0-9)
   const lastDigit = digits[digits.length - 1] || 0;
   const funnyMessages = [
     "شما در زندگی مثل یک کاوشگر هستید!",
@@ -554,7 +578,6 @@ async function generateCard(env, userId) {
   ];
   funnySentence = funnyMessages[lastDigit % 10];
   
-  // انتخاب تصادفی یک نقل‌قول از D1
   const quote = await env.DB.prepare(
     "SELECT text, author FROM quotes ORDER BY RANDOM() LIMIT 1"
   ).first();
@@ -578,7 +601,7 @@ async function generateCard(env, userId) {
   return replyText;
 }
 
-// کیبورد مخصوص کارت آیدی (بدون دکمه کارت جدید)
+// کیبورد مخصوص کارت آیدی
 function getCardInlineKeyboard() {
   return {
     inline_keyboard: [
