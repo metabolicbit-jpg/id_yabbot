@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v9.6 - Ultimate Edition (Fully Debugged & Optimized) ==========
+// ========== ID Finder Bot v9.7 - Auto Group Saving ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -23,7 +23,8 @@ const GUIDE_MAIN = `📚 *راهنمای بات آیدی‌یاب* 📚
 برای مشاهده توضیحات هر بخش، روی دکمه‌های زیر بزنید:
 
 🔎 خدمات عمومی
-🛠 خدمات ادمین گروه`;
+🛠 خدمات ادمین گروه
+⚙️ دستورات ادمین بات`;
 
 const GUIDE_PUBLIC = `🔎 *خدمات عمومی (برای همه کاربران):*
 
@@ -61,11 +62,11 @@ export default {
         const token = env.BALE_BOT_TOKEN;
         if (!token) return new Response('Missing token', { status: 500 });
         
-const webhookUrl = `https://${url.hostname}/webhook`;
-const res = await baleApi(token, 'setWebhook', { 
-    url: webhookUrl, 
-    allowed_updates: ["message", "callback_query", "my_chat_member", "channel_post"] 
-});
+        const webhookUrl = `https://${url.hostname}/webhook`;
+        const res = await baleApi(token, 'setWebhook', { 
+            url: webhookUrl, 
+            allowed_updates: ["message", "callback_query", "my_chat_member", "channel_post"] 
+        });
         if (res) {
           return new Response(JSON.stringify({ ok: res.ok, description: res.description }), {
             headers: { 'Content-Type': 'application/json' }
@@ -121,7 +122,6 @@ const res = await baleApi(token, 'setWebhook', {
           return new Response('OK');
         }
         if (data === 'guide_admin') {
-          // فقط ادمین کل باید بتواند این را ببیند
           if (isAdmin) {
             await editMessage(token, chatId, cb.message.message_id, GUIDE_ADMIN, getBackToGuideKeyboard(isAdmin));
           } else {
@@ -154,35 +154,6 @@ const res = await baleApi(token, 'setWebhook', {
             await baleApi(token, 'answerCallbackQuery', {
               callback_query_id: cb.id, text: 'لطفاً ابتدا عضو شوید.', show_alert: true
             });
-          }
-        }
-        return new Response('OK');
-      }
-
-      // --- مدیریت رویداد اضافه شدن بات به گروه ---
-      if (update.my_chat_member) {
-        const mcm = update.my_chat_member;
-        const chat = mcm.chat;
-        const newStatus = mcm.new_chat_member.status;
-        const chatType = chat.type;
-
-        if (chatType === 'group' || chatType === 'supergroup') {
-          if (newStatus === 'member' || newStatus === 'administrator') {
-            // ذخیره اطلاعات گروه در D1
-            await env.DB.prepare(
-              "INSERT OR REPLACE INTO bot_groups (chat_id, chat_title, chat_username) VALUES (?, ?, ?)"
-            ).bind(chat.id.toString(), chat.title || 'Unknown', chat.username || '').run();
-
-            const id = chat.id.toString();
-            const title = chat.title || 'Unknown';
-            const username = chat.username ? '@' + chat.username : '(بدون یوزر)';
-            await baleApi(token, 'sendMessage', {
-              chat_id: id,
-              text: `🆔 *شناسه این گروه:*\n\n🔢 \`${id}\`\n📛 ${title}\n🔗 آیدی: ${username}\n\n📚 برای دریافت خدمات ادمین، دستورات /admins و /members را بزنید!`,
-              parse_mode: 'Markdown',
-              reply_markup: { inline_keyboard: [[{ text: "📋 کپی آیدی", copy_text: { text: id } }]] }
-            });
-            console.log(`📢 Bot added to group: ID=${id}`);
           }
         }
         return new Response('OK');
@@ -555,12 +526,9 @@ const res = await baleApi(token, 'setWebhook', {
       // ۳) گروه‌ها (دستورات مخصوص مدیران گروه)
       if (msg.chat.type === 'supergroup' || msg.chat.type === 'group') {
         
-        const canUseGroup = await checkRateLimit(env, userId, 'group_command', 5, 60);
-        if (!canUseGroup) {
-          await baleApi(token, 'sendMessage', { chat_id: chatId, text: '⏳ لطفاً سرعت ارسال دستورات را کم کنید.' });
-          return new Response('OK');
-        }
-
+        // ذخیره خودکار اطلاعات گروه با هر پیام
+        await saveGroupInfo(env, msg.chat);
+        
         // --- دستور دریافت لیست ادمین‌های گروه ---
         if (msg.text === '/admins') {
           const adminsRes = await baleApi(token, 'getChatAdministrators', { chat_id: chatId });
@@ -641,6 +609,18 @@ const res = await baleApi(token, 'setWebhook', {
 };
 
 // --- توابع کمکی ---
+
+// تابع ذخیره خودکار اطلاعات گروه در D1
+async function saveGroupInfo(env, chat) {
+    if (!chat) return;
+    try {
+        await env.DB.prepare(
+            "INSERT OR REPLACE INTO bot_groups (chat_id, chat_title, chat_username) VALUES (?, ?, ?)"
+        ).bind(chat.id.toString(), chat.title || 'Unknown', chat.username || '').run();
+    } catch (e) {
+        console.error('Error saving group info:', e);
+    }
+}
 
 // تابع محدودیت نرخ (Rate Limiting)
 async function checkRateLimit(env, userId, action, maxCount, timeWindowSeconds) {
