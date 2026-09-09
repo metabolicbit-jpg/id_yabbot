@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v9.5 - Ultimate Edition with Rate Limiting & Group Report ==========
+// ========== ID Finder Bot v9.6 - Ultimate Edition (Fully Debugged & Optimized) ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -19,13 +19,11 @@ const GUIDE_MESSAGE = `🌟 سلام دوست عزیز!
 
 ⚡ ساده، سریع و کاربردی!`;
 
-// متن‌های راهنما برای هر بخش (کوتاه و کاربردی)
 const GUIDE_MAIN = `📚 *راهنمای بات آیدی‌یاب* 📚
 برای مشاهده توضیحات هر بخش، روی دکمه‌های زیر بزنید:
 
 🔎 خدمات عمومی
-🛠 خدمات ادمین گروه
-⚙️ دستورات ادمین بات`;
+🛠 خدمات ادمین گروه`;
 
 const GUIDE_PUBLIC = `🔎 *خدمات عمومی (برای همه کاربران):*
 
@@ -95,7 +93,7 @@ export default {
         await baleApi(token, 'answerCallbackQuery', { callback_query_id: cb.id });
 
         // محدودیت استفاده از Callback ها (ضد اسپم)
-        const canUse = await checkRateLimit(env, userId, 'callback', 10, 60); // 10 بار در دقیقه
+        const canUse = await checkRateLimit(env, userId, 'callback', 10, 60);
         if (!canUse) {
           await baleApi(token, 'answerCallbackQuery', {
             callback_query_id: cb.id, text: '⏳ لطفاً کمی صبر کنید و دوباره تلاش کنید.', show_alert: true
@@ -104,22 +102,30 @@ export default {
         }
 
         const isMember = await checkStrictMembership(token, userId);
+        const isAdmin = ADMIN_IDS.includes(userId.toString());
 
         // --- دکمه‌های راهنما ---
         if (data === 'guide_main') {
-          await editMessage(token, chatId, cb.message.message_id, GUIDE_MAIN, getGuideKeyboard());
+          await editMessage(token, chatId, cb.message.message_id, GUIDE_MAIN, getGuideKeyboard(isAdmin));
           return new Response('OK');
         }
         if (data === 'guide_public') {
-          await editMessage(token, chatId, cb.message.message_id, GUIDE_PUBLIC, getBackToGuideKeyboard());
+          await editMessage(token, chatId, cb.message.message_id, GUIDE_PUBLIC, getBackToGuideKeyboard(isAdmin));
           return new Response('OK');
         }
         if (data === 'guide_group') {
-          await editMessage(token, chatId, cb.message.message_id, GUIDE_GROUP, getBackToGuideKeyboard());
+          await editMessage(token, chatId, cb.message.message_id, GUIDE_GROUP, getBackToGuideKeyboard(isAdmin));
           return new Response('OK');
         }
         if (data === 'guide_admin') {
-          await editMessage(token, chatId, cb.message.message_id, GUIDE_ADMIN, getBackToGuideKeyboard());
+          // فقط ادمین کل باید بتواند این را ببیند
+          if (isAdmin) {
+            await editMessage(token, chatId, cb.message.message_id, GUIDE_ADMIN, getBackToGuideKeyboard(isAdmin));
+          } else {
+            await baleApi(token, 'answerCallbackQuery', {
+              callback_query_id: cb.id, text: '⛔ دسترسی غیرمجاز!', show_alert: true
+            });
+          }
           return new Response('OK');
         }
 
@@ -214,7 +220,7 @@ export default {
         }
 
         // محدودیت عمومی برای پیام‌ها (ضد اسپم)
-        const canSendMessage = await checkRateLimit(env, userId, 'message', 20, 60); // 20 پیام در دقیقه
+        const canSendMessage = await checkRateLimit(env, userId, 'message', 20, 60);
         if (!canSendMessage) {
           await baleApi(token, 'sendMessage', {
             chat_id: chatId,
@@ -275,7 +281,6 @@ export default {
               report += `• ❌ خطای D1: ${e.message}\n`;
             }
             
-            // خواندن هم تعداد ردیف‌های جدول users و هم مقدار stats.total
             const userCount = await env.DB.prepare("SELECT COUNT(*) as count FROM users").first();
             const statTotal = await env.DB.prepare("SELECT value FROM stats WHERE key = 'total'").first();
             const groupCount = await env.DB.prepare("SELECT COUNT(*) as count FROM bot_groups").first();
@@ -448,27 +453,23 @@ export default {
           ).bind(userId.toString()).first();
 
           if (cardStatus && cardStatus.card_date === today) {
-            // اگر کاربر امروز کارت را دیده، همان کارت را نشان بده
             if (cardStatus.usage_count >= 3) {
               await baleApi(token, 'sendMessage', {
                 chat_id: chatId,
                 text: `⏳ شما قبلاً کارت امروز خود را مشاهده کرده‌اید.\n\nبرای مشاهده دوباره، فردا مراجعه کنید. 🌙`
               });
             } else {
-              // نمایش همان کارت قبلی
               await baleApi(token, 'sendMessage', {
                 chat_id: chatId,
                 text: cardStatus.card_text,
                 parse_mode: 'Markdown',
                 reply_markup: getCardInlineKeyboard()
               });
-              // افزایش تعداد استفاده
               await env.DB.prepare(
                 "UPDATE user_card_status SET usage_count = usage_count + 1 WHERE user_id = ?"
               ).bind(userId.toString()).run();
             }
           } else {
-            // اگر کاربر امروز کارت را ندیده، کارت جدید بساز
             const cardText = await generateCard(env, userId);
             await env.DB.prepare(
               "INSERT OR REPLACE INTO user_card_status (user_id, card_text, card_date, usage_count) VALUES (?, ?, ?, 1)"
@@ -486,11 +487,12 @@ export default {
 
         // د) دکمه «📚 راهنما»
         if (msg.text === "📚 راهنما") {
+          const isAdmin = ADMIN_IDS.includes(userId.toString());
           await baleApi(token, 'sendMessage', {
             chat_id: chatId,
             text: GUIDE_MAIN,
             parse_mode: 'Markdown',
-            reply_markup: getGuideKeyboard()
+            reply_markup: getGuideKeyboard(isAdmin)
           });
           return new Response('OK');
         }
@@ -550,8 +552,7 @@ export default {
       // ۳) گروه‌ها (دستورات مخصوص مدیران گروه)
       if (msg.chat.type === 'supergroup' || msg.chat.type === 'group') {
         
-        // --- محدودیت استفاده در گروه ---
-        const canUseGroup = await checkRateLimit(env, userId, 'group_command', 5, 60); // 5 دستور در دقیقه
+        const canUseGroup = await checkRateLimit(env, userId, 'group_command', 5, 60);
         if (!canUseGroup) {
           await baleApi(token, 'sendMessage', { chat_id: chatId, text: '⏳ لطفاً سرعت ارسال دستورات را کم کنید.' });
           return new Response('OK');
@@ -658,7 +659,6 @@ async function checkRateLimit(env, userId, action, maxCount, timeWindowSeconds) 
   const usageCount = record.usage_count;
   
   if (lastUsed < windowStart) {
-    // پنجره زمانی جدید
     await env.DB.prepare(
       "UPDATE user_activity SET last_used = ?, usage_count = 1 WHERE user_id = ? AND action = ?"
     ).bind(now, userId.toString(), action).run();
@@ -699,7 +699,6 @@ async function generateCard(env, userId) {
     personality += "\n🌱 قدمت شما نشان می‌دهد که از کاربران جدید و خوش‌آتیه بله هستید!";
   }
   
-  // طالع‌بینی بر اساس ارقام
   let planet = "";
   let zodiac = "";
   let funnySentence = "";
@@ -750,23 +749,30 @@ async function generateCard(env, userId) {
   return replyText;
 }
 
-// کیبورد راهنما (دکمه‌های اینلاین)
-function getGuideKeyboard() {
+// کیبورد راهنما (شرطی - فقط ادمین کل دکمه ادمین را می‌بیند)
+function getGuideKeyboard(isAdmin) {
+  const buttons = [
+    [{ text: "🔎 خدمات عمومی", callback_data: "guide_public" }],
+    [{ text: "🛠 خدمات ادمین گروه", callback_data: "guide_group" }]
+  ];
+  
+  if (isAdmin) {
+    buttons.push([{ text: "⚙️ دستورات ادمین بات", callback_data: "guide_admin" }]);
+  }
+  
+  buttons.push([{ text: "📚 بازگشت به منو", callback_data: "guide_main" }]);
+  
   return {
-    inline_keyboard: [
-      [{ text: "🔎 خدمات عمومی", callback_data: "guide_public" }],
-      [{ text: "🛠 خدمات ادمین گروه", callback_data: "guide_group" }],
-      [{ text: "⚙️ دستورات ادمین بات", callback_data: "guide_admin" }],
-      [{ text: "📚 بازگشت به منو", callback_data: "guide_main" }]
-    ]
+    inline_keyboard: buttons
   };
 }
 
-// کیبورد بازگشت به راهنما
-function getBackToGuideKeyboard() {
+// کیبورد بازگشت به راهنما (شرطی)
+function getBackToGuideKeyboard(isAdmin) {
   return {
     inline_keyboard: [
-      [{ text: "📚 بازگشت به راهنما", callback_data: "guide_main" }]
+      [{ text: "📚 بازگشت به راهنما", callback_data: "guide_main" }],
+      ...(isAdmin ? [[{ text: "⚙️ دستورات ادمین", callback_data: "guide_admin" }]] : [])
     ]
   };
 }
