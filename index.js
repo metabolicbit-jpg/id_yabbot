@@ -1,4 +1,4 @@
-// ========== ID Finder Bot v9.1 - Final Version with Fixed Card Button ==========
+// ========== ID Finder Bot v9.2 - Final Version with Horoscope & No Refresh ==========
 
 const REQUIRED_CHANNEL_ID = "5235764517";
 const JOIN_LINK = "https://ble.ir/join/NzdkM2I1Nj";
@@ -84,9 +84,6 @@ export default {
               callback_query_id: cb.id, text: 'لطفاً ابتدا عضو شوید.', show_alert: true
             });
           }
-        } else if (data === 'new_card') {
-          const cardText = await generateCard(env, userId);
-          await editMessage(token, chatId, cb.message.message_id, cardText, getCardInlineKeyboard());
         }
         return new Response('OK');
       }
@@ -384,7 +381,7 @@ export default {
         // هـ) پیام‌های دیگر در چت خصوصی (راهنما)
         await baleApi(token, 'sendMessage', {
           chat_id: chatId,
-          text: `❓ برای دریافت آیدی خود روی دکمه «🚀 شروع» بزنید یا پیام کاربر دیگری را فوروارد کنید.\n\n${GUIDE_MESSAGE}`,
+          text: `❓ برای دریافت آیدی خود روی دکبه «🚀 شروع» بزنید یا پیام کاربر دیگری را فوروارد کنید.\n\n${GUIDE_MESSAGE}`,
           reply_markup: getReplyKeyboard()
         });
         return new Response('OK');
@@ -474,7 +471,7 @@ export default {
 
 // --- توابع کمکی ---
 
-// تابع تولید کارت آیدی هوشمند
+// تابع تولید کارت آیدی هوشمند با طالع‌بینی
 async function generateCard(env, userId) {
   const userIdStr = userId.toString();
   
@@ -499,15 +496,45 @@ async function generateCard(env, userId) {
     personality += "\n🌱 قدمت شما نشان می‌دهد که از کاربران جدید و خوش‌آتیه بله هستید!";
   }
   
-  // انتخاب تصادفی یک نقل‌قول از D1
-  const quote = await env.DB.prepare(
-    "SELECT text, author FROM quotes ORDER BY RANDOM() LIMIT 1"
-  ).first();
+  // طالع‌بینی بر اساس ارقام
+  let planet = "";
+  let zodiac = "";
+  let funnySentence = "";
+  
+  // سیاره حاکم بر اساس جمع ارقام (1-9)
+  const planetIndex = (sum % 9) + 1;
+  const planets = ["خورشید", "ماه", "مشتری", "زهره", "مریخ", "عطارد", "زحل", "اورانوس", "نپتون"];
+  planet = planets[planetIndex - 1];
+  
+  // برج فلکی بر اساس رقم اول آیدی (0-9)
+  const firstDigit = digits[0] || 0;
+  const zodiacs = ["حمل", "ثور", "جوزا", "سرطان", "اسد", "سنبله", "میزان", "عقرب", "قوس", "جدی"];
+  zodiac = zodiacs[firstDigit % 10];
+  
+  // جمله طنز بر اساس رقم آخر آیدی (0-9)
+  const lastDigit = digits[digits.length - 1] || 0;
+  const funnyMessages = [
+    "شما در زندگی مثل یک کاوشگر هستید!",
+    "هیچ‌وقت از ریسک نمی‌ترسید!",
+    "شما یک رهبر طبیعی هستید!",
+    "قلب شما از طلاست!",
+    "همیشه در حال یادگیری هستید!",
+    "شما یک دوست وفادار هستید!",
+    "خلاقیت شما حد و مرزی ندارد!",
+    "شما به دیگران انرژی می‌دهید!",
+    "شما یک متفکر عمیق هستید!",
+    "شما همیشه در مسیر رشد هستید!"
+  ];
+  funnySentence = funnyMessages[lastDigit % 10];
   
   let replyText = `🌟 کارت اختصاصی آیدی شما 🌟\n\n`;
   replyText += `🆔 آیدی عددی: \`${userIdStr}\`\n`;
   replyText += `🔢 مجموع ارقام: ${sum}\n\n`;
   replyText += `🎭 تحلیل شخصیت شما:\n${personality}\n\n`;
+  replyText += `🔮 طالع‌بینی ارقام شما:\n`;
+  replyText += `🪐 سیاره حاکم: ${planet}\n`;
+  replyText += `♈ برج فلکی: ${zodiac}\n`;
+  replyText += `💬 جمله طنز: "${funnySentence}"\n\n`;
   replyText += `🍀 شانس امروز شما: ${luckyScore}/100\n\n`;
   
   if (quote) {
@@ -519,13 +546,13 @@ async function generateCard(env, userId) {
   return replyText;
 }
 
-// کیبورد مخصوص کارت آیدی
+// کیبورد مخصوص کارت آیدی (بدون دکمه کارت جدید)
 function getCardInlineKeyboard() {
   return {
     inline_keyboard: [
       [
         { text: "📋 کپی کارت", copy_text: { text: "🌟 کارت آیدی هوشمند" } },
-        { text: "🔄 کارت جدید", callback_data: "new_card" }
+        { text: "📤 اشتراک‌گذاری", switch_inline_query: "کارت آیدی من" }
       ],
       [{ text: "📢 کانال یادبگیریم", url: PUBLIC_LINK }]
     ]
